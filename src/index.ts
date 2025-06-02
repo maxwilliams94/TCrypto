@@ -4,6 +4,7 @@ import { createTransactionRespository } from './repositories/memory';
 import { TransactionStorage } from './repositories/storage';
 import { importInitialTransactions } from './services/transactionImporter';
 import { transactionsRouter } from './routes/transactions';
+import { taxRouter } from './routes/tax';
 
 export const app: Application = express();
 
@@ -21,6 +22,7 @@ app.get('/', (req: Request, res: Response) => {
 });
 
 app.use('/transactions', transactionsRouter);
+app.use('/tax', taxRouter);
 
 async function main() {
     await importInitialTransactions(transactionRepository)

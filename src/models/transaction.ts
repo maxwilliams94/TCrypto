@@ -37,15 +37,13 @@ export class Transaction {
         this.dateTime = dateTime;
     }
 
-    toJSON() {
+    toSimpleJSON() {
         return {
-            id: this.id,
-            baseCurrency: this.baseCurrency,
-            quoteCurrency: this.quoteCurrency,
-            exchangee: this.exchange,
+            CCY: `${this.baseCurrency}-${this.quoteCurrency}`,
+            exchange: this.exchange,
             side: this.side,
             baseSize: this.baseSize,
-            quoteSize: this.quoteSize,
+            price: this.price,
             fee: this.fee,
             dateTime: this.dateTime.toISOString()
         };

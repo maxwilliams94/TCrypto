@@ -6,7 +6,7 @@ export const transactionsRouter = express.Router();
 
 transactionsRouter.get('/', async (req: Request, res: Response) => {
     transactionRepository.getAll().then(transactions => {
-        res.send(transactions.map(transaction => transaction.toJSON()));
+        res.send(transactions);
     })}
 );
 
@@ -14,7 +14,7 @@ transactionsRouter.get('/:id', async (req: Request, res: Response) => {
     const id = parseInt(req.params.id);
     transactionRepository.getByIndex(id).then(transaction => {
         if (transaction) {
-            res.send(transaction.toJSON());
+            res.send(transaction);
         } else {
             res.status(404).send({ error: 'Transaction not found' });
         }

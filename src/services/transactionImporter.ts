@@ -31,7 +31,7 @@ export async function loadTransactionData(filePath: string): Promise<Array<Trans
             data.push(transaction);
         })
         .on('end', () => {
-            resolve(data)
+            resolve(data.sort((a, b) => a.dateTime.getTime() - b.dateTime.getTime()));
         })
         .on('error', (error) => {
             reject(new Error(`Error reading file ${filePath}: ${error.message}`));
