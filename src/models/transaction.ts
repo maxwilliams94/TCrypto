@@ -8,6 +8,7 @@ export class Transaction {
     side: string;
     baseSize: number;
     quoteSize: number;
+    price: number;
     fee: number;
     dateTime: Date;
 
@@ -19,6 +20,7 @@ export class Transaction {
         side: string,
         baseSize: number,
         quoteSize: number,
+        price: number,
         fee: number,
         dateTime: Date
     ) {
@@ -29,6 +31,7 @@ export class Transaction {
         this.side = side;
         this.baseSize = baseSize;
         this.quoteSize = quoteSize;
+        this.price = price;
         this.fee = fee;
         this.dateTime = dateTime;
     }

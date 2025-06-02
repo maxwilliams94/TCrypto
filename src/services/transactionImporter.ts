@@ -12,7 +12,7 @@ export async function loadTransactionData(filePath: string): Promise<Array<Trans
         fs.createReadStream(filePath)
         .pipe(csv())
         .on('headers', (headers) => {
-            for (let reqHeader of ['Id', 'Status', 'Market', 'FilledQuantity', 'FilledPrice', 'Filled At'])
+            for (let reqHeader of ['Id', 'Status', 'Market', 'FilledQuantity', 'FilledQuote', 'FilledPrice', 'Filled At'])
             if (!headers.includes(reqHeader)) {
                 reject(new Error(`${filePath} does not contain ${reqHeader}`));
             }
@@ -25,6 +25,7 @@ export async function loadTransactionData(filePath: string): Promise<Array<Trans
                 row.Exchange,
                 row.Side,
                 parseFloat(row.FilledQuantity),
+                parseFloat(row.FilledQuote),
                 parseFloat(row.FilledPrice),
                 parseFloat(row.Fee || '0'),
                 new Date(row['Created At'])
