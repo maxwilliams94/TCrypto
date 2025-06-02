@@ -5,4 +5,7 @@ export interface TransactionStorage {
     getAll: () => Promise<Transaction[]>;
     getByDate: (startDate: Date, endDate: Date) => Promise<Transaction[]>;
     getById: (id: string) => Promise<Transaction | null>;
+    getByIndex: (index: number) => Promise<Transaction | null>;
+    getCount: () => Promise<number>;
+    clear: () => Promise<void>;
 }

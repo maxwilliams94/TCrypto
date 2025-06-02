@@ -12,6 +12,7 @@ export class Transaction {
     fee: number;
     dateTime: Date;
 
+
     constructor(
         id: string,
         baseCurrency: string,

@@ -1,35 +1,29 @@
 import express, { Express, Request, Response, Application } from 'express';
 
-import { MemoryRepository } from './repositories/memory';
-import { Transaction } from './models/transaction';
+import { createTransactionRespository } from './repositories/memory';
 import { TransactionStorage } from './repositories/storage';
+import { importInitialTransactions } from './services/transactionImporter';
+import { transactionsRouter } from './routes/transactions';
 
-const app: Application = express();
+export const app: Application = express();
 
 const PORT: string | number = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+const transactionRepository: TransactionStorage = createTransactionRespository();
   
 app.get('/', (req: Request, res: Response) => {
-    transactionRepository.getAll().then(transactions => {
-        res.send({"Transactions": transactions.length});
+    transactionRepository.getCount().then(count => {
+        res.send({"Transactions": count});
     })
 });
 
-app.get('/transactions', (req: Request, res: Response) => {
-    transactionRepository.getAll().then(transactions => {
-        res.send(transactions.map(transaction => transaction.toJSON()));
-    })}
-);
-
-const transactionRepository = new MemoryRepository();
-const transactionImporter = require('./services/transactionImporter');
-
+app.use('/transactions', transactionsRouter);
 
 async function main() {
-    await transactionImporter.importInitialTransactions(transactionRepository)
+    await importInitialTransactions(transactionRepository)
 
     try {
     app.listen(PORT, () => {

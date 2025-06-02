@@ -1,9 +1,7 @@
 import * as fs from 'fs';
-import * as path from 'path';
 import csv from 'csv-parser';
 import { Transaction } from '../models/transaction';
 import { TransactionStorage } from '../repositories/storage';
-import { log } from 'console';
 
 
 export async function loadTransactionData(filePath: string): Promise<Array<Transaction>>{
@@ -28,7 +26,7 @@ export async function loadTransactionData(filePath: string): Promise<Array<Trans
                 parseFloat(row.FilledQuote),
                 parseFloat(row.FilledPrice),
                 parseFloat(row.Fee || '0'),
-                new Date(row['Created At'])
+                new Date(row['Filled At'])
             )
             data.push(transaction);
         })
