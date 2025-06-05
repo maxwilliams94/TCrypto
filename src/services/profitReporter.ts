@@ -11,6 +11,8 @@ export function generateTaxReport(transactions: Transaction[], nativeCurrency: s
 
     const buyPointers: Map<string, number> = new Map(); // Point at the index of the current transaction OR the current buy of a given asset
     const remainingAsset: Map<string, number> = new Map(); // How much of an asset is left to sell for a given asset
+    remainingAsset.set(nativeCurrency, 999999999999);
+    buyPointers.set(nativeCurrency, -1); // Native currency does not have a buy pointer
 
     for (let i: number = 0; i < taxReport.transactions.length; i++) {
         let t = taxReport.transactions[i];

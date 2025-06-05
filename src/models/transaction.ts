@@ -11,7 +11,11 @@ export class Transaction {
     price: number;
     fee: number;
     dateTime: Date;
-
+    quoteSizeNative?: number;
+    nativeCurrency?: string;
+    baseSizeRemaining?: number;
+    soldOn?: Date;
+    
 
     constructor(
         id: string,
@@ -35,6 +39,8 @@ export class Transaction {
         this.price = price;
         this.fee = fee;
         this.dateTime = dateTime;
+        this.baseSizeRemaining = baseSize;
+
     }
 
     toSimpleJSON() {
@@ -48,4 +54,13 @@ export class Transaction {
             dateTime: this.dateTime.toISOString()
         };
     }
+  }
+
+  export function isCryptoCryptoTransaction(transaction: Transaction): boolean {
+    return !isFiat(transaction.baseCurrency) && !isFiat(transaction.quoteCurrency);
+  }
+
+  function isFiat(currency: string): boolean {
+    const fiatCurrencies = ['USD', 'EUR', 'GBP', 'NOK', 'SEK', 'DKK', 'JPY', 'CNY', 'AUD', 'CAD'];
+    return fiatCurrencies.includes(currency.toUpperCase());
   }

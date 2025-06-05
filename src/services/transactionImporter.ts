@@ -1,10 +1,12 @@
 import * as fs from 'fs';
 import csv from 'csv-parser';
-import { Transaction } from '../models/transaction';
+import { isCryptoCryptoTransaction, Transaction } from '../models/transaction';
 import { TransactionStorage } from '../repositories/storage';
+import { ExchangeRateService } from './exchangeRateService';
 
+const exchangeRateService = new ExchangeRateService();
 
-export async function loadTransactionData(filePath: string): Promise<Array<Transaction>>{
+export async function loadTransactionData(filePath: string, nativeCurrency: string): Promise<Array<Transaction>>{
     const data: Transaction[] = [];
     return new Promise((resolve, reject) => {
         fs.createReadStream(filePath)
@@ -40,7 +42,7 @@ export async function loadTransactionData(filePath: string): Promise<Array<Trans
 }
 
 
-export async function importInitialTransactions(storage: TransactionStorage) {
+export async function importInitialTransactions(storage: TransactionStorage, nativeCurrency: string = 'NOK'): Promise<void> {
     let transactionDir = process.env.TRANSACTION_DIR;
     if (!transactionDir) {
         transactionDir = process.cwd();
@@ -67,8 +69,11 @@ export async function importInitialTransactions(storage: TransactionStorage) {
         for (const file of files) {
             const filePath = path.join(transactionDir, file);
             try {
-                const transactions: Array<Transaction> = await loadTransactionData(filePath);
-                transactions.forEach((transaction: Transaction) => {
+                const transactions: Array<Transaction> = await loadTransactionData(filePath, 'NOK');
+                const splitTransactions = await Promise.all(
+                    transactions.map(async (transaction: Transaction) => await splitCryptoCryptoTransaction(transaction, nativeCurrency))
+                );
+                splitTransactions.flat().forEach((transaction: Transaction) => {
                     storage.add(transaction);
                 });
                 console.log(`Successfully imported transactions from ${filePath}`);
@@ -82,4 +87,42 @@ export async function importInitialTransactions(storage: TransactionStorage) {
     } catch (error: any) {
         console.error(error.message);
     }
+}
+
+async function splitCryptoCryptoTransaction(transaction: Transaction, nativeCurrency: string): Promise<Transaction[]> {
+    if (!isCryptoCryptoTransaction(transaction)) return [transaction];
+
+    //split the transaction into two transactions as we must consider the quote currency as being sold
+    const exchangeRate: number = await exchangeRateService.getCcyNokRate(transaction.quoteCurrency, transaction.dateTime)
+    console.log("Exchange rate for", transaction.quoteCurrency, "on", transaction.dateTime, "is", exchangeRate);
+    const sellTransaction = new Transaction(
+        transaction.id + '-sell',
+        transaction.quoteCurrency,
+        nativeCurrency!,
+        transaction.exchange,
+        "SELL",
+        transaction.quoteSize,
+        transaction.quoteSize * exchangeRate,
+        exchangeRate,
+        0,
+        transaction.dateTime);
+    const buyTransaction = new Transaction(
+        transaction.id + '-buy',
+        transaction.baseCurrency,
+        nativeCurrency!,
+        transaction.exchange,
+        "BUY",
+        transaction.baseSize,
+        transaction.quoteSize * exchangeRate,
+        transaction.price * exchangeRate,
+        transaction.fee * exchangeRate,
+        transaction.dateTime
+    );
+    console.log("Split transaction into:", sellTransaction.toSimpleJSON(), buyTransaction.toSimpleJSON());
+    return [sellTransaction, buyTransaction];
+
+    
+        
+        
+                
 }
