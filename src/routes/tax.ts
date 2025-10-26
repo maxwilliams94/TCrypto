@@ -1,6 +1,6 @@
 import express, { Express, Request, Response } from 'express';
 import { generateTaxReport } from '../services/profitReporter';
-import { transactionRepository } from '../repositories/memory';
+import { transactionRepository } from '../index';
 
 export const taxRouter = express.Router();
 

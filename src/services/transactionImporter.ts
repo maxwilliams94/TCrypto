@@ -3,6 +3,7 @@ import csv from 'csv-parser';
 import { isCryptoCryptoTransaction, Transaction } from '../models/transaction';
 import { TransactionStorage } from '../repositories/storage';
 import { ExchangeRateService } from './exchangeRateService';
+import { FileRepository } from '../repositories/file';
 
 const exchangeRateService = new ExchangeRateService();
 
@@ -47,6 +48,12 @@ export async function importInitialTransactions(storage: TransactionStorage, nat
     if (!transactionDir) {
         transactionDir = process.cwd();
     }
+    
+    // Load existing transactions from storage FIRST
+    const existingTransactions = await storage.getAll();
+    const existingIds = new Set(existingTransactions.map(t => t.id));
+    console.info(`Loaded ${existingTransactions.length} existing transactions from storage`);
+    
     console.info("Importing transactions from directory:", transactionDir);
 
     const fs = require('fs');
@@ -58,14 +65,16 @@ export async function importInitialTransactions(storage: TransactionStorage, nat
                 if (err) {
                     reject(new Error(`Error reading directory ${transactionDir}: ${err.message}`));
                 } else {
-                    if (files.filter(f => f.endsWith(".csv")).length === 0) {
-                        reject(new Error(`No files found in directory ${transactionDir}.`));
+                    const csvFiles = files.filter(f => f.endsWith(".csv"));
+                    if (csvFiles.length === 0) {
+                        reject(new Error(`No CSV files found in directory ${transactionDir}.`));
                     }
-                    resolve(files);
+                    resolve(csvFiles);
                 }
             });
         });
 
+        let newTransactionCount = 0;
         for (const file of files) {
             const filePath = path.join(transactionDir, file);
             try {
@@ -73,8 +82,14 @@ export async function importInitialTransactions(storage: TransactionStorage, nat
                 const splitTransactions = await Promise.all(
                     transactions.map(async (transaction: Transaction) => await splitCryptoCryptoTransaction(transaction, nativeCurrency))
                 );
+                
+                // Only add transactions that don't already exist
                 splitTransactions.flat().forEach((transaction: Transaction) => {
-                    storage.add(transaction);
+                    if (!existingIds.has(transaction.id)) {
+                        storage.add(transaction);
+                        existingIds.add(transaction.id);
+                        newTransactionCount++;
+                    }
                 });
                 console.log(`Successfully imported transactions from ${filePath}`);
             } catch (error: any) {
@@ -83,7 +98,12 @@ export async function importInitialTransactions(storage: TransactionStorage, nat
         }
 
         const allTransactions = await storage.getAll();
-        console.info(`Transaction import process completed. There are ${allTransactions.length} transactions in the repository.`);
+        console.info(`Transaction import process completed. Added ${newTransactionCount} new transactions. Total: ${allTransactions.length} transactions in the repository.`);
+        
+        // Flush any pending writes for file-based storage
+        if (storage instanceof FileRepository) {
+            await storage.flush();
+        }
     } catch (error: any) {
         console.error(error.message);
     }

@@ -1,0 +1,2 @@
+# Data directory for file-based storage
+# transactions.json will be created here when USE_FILE_STORAGE=true
