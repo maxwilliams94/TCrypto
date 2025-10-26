@@ -65,6 +65,7 @@ export class ExchangeRateService {
         const normalizedDate = this.normalizeDate(date);
         const existingRate = await this.rateStorage.getRate(currency, 'NOK', normalizedDate);
         if (existingRate) {
+            // Return cached value immediately without waiting
             return existingRate.price;
         }
 
@@ -90,6 +91,7 @@ export class ExchangeRateService {
         const normalizedDate = this.normalizeDate(date);
         const existingRate = await this.rateStorage.getRate(cryptoSymbol, 'USD', normalizedDate);
         if (existingRate) {
+            // Return cached value immediately without API call
             return existingRate.price;
         }
 
@@ -126,6 +128,7 @@ export class ExchangeRateService {
 
     /**
      * Fetches cryptocurrency price in any supported currency for a specific date.
+     * Also caches USD price for flexibility in future conversions.
      * @param cryptoSymbol The crypto symbol (e.g., 'bitcoin', 'ethereum') - CoinGecko coin ID.
      * @param quoteCurrency The target currency (e.g., 'usd', 'eur', 'nok').
      * @param date The date for which the price is required.
@@ -138,24 +141,28 @@ export class ExchangeRateService {
         const normalizedDate = this.normalizeDate(date);
         const existingRate = await this.rateStorage.getRate(cryptoSymbol.toUpperCase(), quoteCurrency.toUpperCase(), normalizedDate);
         if (existingRate) {
+            // Return cached value immediately without API call
             return existingRate.price;
         }
 
-        // Fetch from CoinGecko API
-        const price = await this.fetchCryptoHistoricalPrice(cryptoSymbol, normalizedQuote, date);
+        // Fetch from CoinGecko API - this single API call can return multiple currencies
+        // We'll fetch both the target currency AND USD for future flexibility
+        const prices = await this.fetchCryptoHistoricalPriceMulti(cryptoSymbol, [normalizedQuote, 'usd'], date);
         
-        // Store for future use (normalize date to start of day)
-        const currencyRate = new CurrencyRate(
-            cryptoSymbol.toUpperCase(), 
-            quoteCurrency.toUpperCase(), 
-            price, 
-            normalizedDate, 
-            'coingecko'
-        );
-        await this.rateStorage.add(currencyRate);
+        // Store both prices for future use (normalize date to start of day)
+        for (const [currency, price] of Object.entries(prices)) {
+            const currencyRate = new CurrencyRate(
+                cryptoSymbol.toUpperCase(), 
+                currency.toUpperCase(), 
+                price, 
+                normalizedDate, 
+                'coingecko'
+            );
+            await this.rateStorage.add(currencyRate);
+        }
         await this.rateStorage.flush?.();
 
-        return price;
+        return prices[normalizedQuote];
     }
 
     /**
@@ -188,6 +195,7 @@ export class ExchangeRateService {
     /**
      * Batch fetch multiple cryptocurrency prices for a specific date.
      * Useful for processing multiple staking rewards at once.
+     * Also caches USD prices for flexibility.
      */
     async getBatchCryptoPrices(
         cryptoSymbols: string[], 
@@ -210,23 +218,31 @@ export class ExchangeRateService {
         }
 
         // Fetch uncached prices (with rate limiting consideration)
+        // Only wait between API calls, not when all prices are cached
         for (const symbol of uncachedSymbols) {
             try {
-                const price = await this.fetchCryptoHistoricalPrice(symbol, normalizedQuote, date);
-                results.set(symbol.toUpperCase(), price);
+                // Fetch both target currency and USD for future flexibility
+                const prices = await this.fetchCryptoHistoricalPriceMulti(symbol, [normalizedQuote, 'usd'], date);
                 
-                // Store for future use (normalize date to start of day)
-                const normalizedDate = this.normalizeDate(date);
-                const currencyRate = new CurrencyRate(
-                    symbol.toUpperCase(), 
-                    quoteCurrency.toUpperCase(), 
-                    price, 
-                    normalizedDate, 
-                    'coingecko'
-                );
-                await this.rateStorage.add(currencyRate);
+                // Store all fetched prices
+                for (const [currency, price] of Object.entries(prices)) {
+                    const currencyRate = new CurrencyRate(
+                        symbol.toUpperCase(), 
+                        currency.toUpperCase(), 
+                        price, 
+                        normalizedDate, 
+                        'coingecko'
+                    );
+                    await this.rateStorage.add(currencyRate);
+                }
+                
+                // Add the requested currency to results
+                if (prices[normalizedQuote]) {
+                    results.set(symbol.toUpperCase(), prices[normalizedQuote]);
+                }
                 
                 // Small delay to respect rate limits (CoinGecko free tier: 10-30 calls/minute)
+                // Only wait if we actually made an API call (i.e., there are uncached symbols)
                 await new Promise(resolve => setTimeout(resolve, 2000));
             } catch (error) {
                 console.warn(`Failed to fetch price for ${symbol}: ${error}`);
@@ -234,7 +250,10 @@ export class ExchangeRateService {
             }
         }
 
-        await this.rateStorage.flush?.();
+        // Only flush if we added new data
+        if (uncachedSymbols.length > 0) {
+            await this.rateStorage.flush?.();
+        }
         return results;
     }
 
@@ -271,6 +290,67 @@ export class ExchangeRateService {
             }
             
             throw new Error(`Failed to fetch crypto price for ${cryptoSymbol} in ${quoteCurrency}.`);
+        }
+    }
+
+    /**
+     * Fetches cryptocurrency prices in multiple currencies with a single API call.
+     * This is more efficient than making separate calls for each currency.
+     * @param cryptoSymbol The crypto symbol (e.g., 'bitcoin', 'ethereum') - CoinGecko coin ID.
+     * @param quoteCurrencies Array of target currencies (e.g., ['usd', 'eur', 'nok']).
+     * @param date The date for which the prices are required.
+     * @returns Object mapping currency to price.
+     */
+    private async fetchCryptoHistoricalPriceMulti(cryptoSymbol: string, quoteCurrencies: string[], date: Date): Promise<Record<string, number>> {
+        const coinId = this.mapSymbolToCoinGeckoId(cryptoSymbol);
+        const dateStr = formatDateToDDMMYYYY(date); // CoinGecko expects DD-MM-YYYY format
+        
+        const url = `${this.cryptoApiBaseUrl}/coins/${coinId}/history?date=${dateStr}&localization=false`;
+
+        try {
+            const response = await this.makeCoingeckoRequest(url);
+            const currentPrices = response.data?.market_data?.current_price;
+
+            if (!currentPrices) {
+                throw new Error(`Crypto price data not found for ${cryptoSymbol} on ${dateStr}.`);
+            }
+
+            const result: Record<string, number> = {};
+            for (const currency of quoteCurrencies) {
+                const normalizedCurrency = currency.toLowerCase();
+                const price = currentPrices[normalizedCurrency];
+                if (price) {
+                    result[normalizedCurrency] = parseFloat(price);
+                } else {
+                    console.warn(`Price not found for ${cryptoSymbol} in ${currency} on ${dateStr}, skipping.`);
+                }
+            }
+
+            if (Object.keys(result).length === 0) {
+                throw new Error(`No prices found for ${cryptoSymbol} in requested currencies on ${dateStr}.`);
+            }
+
+            return result;
+        } catch (error) {
+            console.error(`Error fetching crypto prices for ${cryptoSymbol}:`, error);
+            
+            // If historical data fails, try a fallback approach for recent dates
+            if (this.isRecentDate(date)) {
+                console.log(`Attempting current price fallback for recent date: ${cryptoSymbol}`);
+                const result: Record<string, number> = {};
+                for (const currency of quoteCurrencies) {
+                    try {
+                        result[currency.toLowerCase()] = await this.getCurrentCryptoPrice(cryptoSymbol, currency);
+                    } catch (fallbackError) {
+                        console.warn(`Fallback failed for ${cryptoSymbol} in ${currency}: ${fallbackError}`);
+                    }
+                }
+                if (Object.keys(result).length > 0) {
+                    return result;
+                }
+            }
+            
+            throw new Error(`Failed to fetch crypto prices for ${cryptoSymbol} in requested currencies.`);
         }
     }
 

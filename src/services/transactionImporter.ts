@@ -1,3 +1,4 @@
+type FillMissingPriceResult = { transaction: Transaction, apiCalled: boolean };
 import * as fs from 'fs';
 import csv from 'csv-parser';
 import { isCryptoCryptoTransaction, Transaction, TransactionType } from '../models/transaction';
@@ -12,7 +13,7 @@ export async function loadTransactionData(filePath: string, nativeCurrency: stri
         fs.createReadStream(filePath)
         .pipe(csv())
         .on('headers', (headers) => {
-            for (let reqHeader of ['Id', 'Status', 'Market', 'TransactionType', 'Fee', 'FilledQuantity', 'FilledQuote', 'FilledPrice', 'Filled At'])
+            for (let reqHeader of ['Id', 'Status', 'Side', 'Market', 'TransactionType', 'Fee', 'FilledQuantity', 'FilledQuote', 'FilledPrice', 'Filled At'])
             if (!headers.includes(reqHeader)) {
                 reject(new Error(`${filePath} does not contain ${reqHeader}`));
             }
@@ -21,6 +22,9 @@ export async function loadTransactionData(filePath: string, nativeCurrency: stri
             if (row.Status !== 'FILLED') return;
             const transactionType = mapTransactionType(row.TransactionType);
             const price = parseFloat(row.FilledPrice) || 0;
+            if (!row.Side && transactionType === 'STAKING_REWARD') {
+                row.Side = 'BUY';
+            }
             
             const transaction = new Transaction(
                 row.Id,
@@ -132,39 +136,29 @@ async function fillMissingPricesWithRateLimit(transactions: Transaction[], nativ
     // Process transactions sequentially to respect rate limits (30 requests/minute)
     for (let i = 0; i < transactions.length; i++) {
         const transaction = transactions[i];
-        
         const needsLookup = needsPriceLookup(transaction);
         if (needsLookup) {
             priceLookupsAttempted++;
         } else {
             priceLookupsSkipped++;
         }
-        
         try {
-            const updatedTransaction = await fillMissingPrice(transaction, nativeCurrency, exchangeRateService);
+            const { transaction: updatedTransaction, apiCalled } = await fillMissingPrice(transaction, nativeCurrency, exchangeRateService);
             result.push(updatedTransaction);
-            
-            // Check if price was successfully updated
             if (needsLookup && updatedTransaction.price && updatedTransaction.price > 0) {
                 priceLookupsSuccessful++;
             }
-            
-            // Add delay if we made an API call (only for transactions that needed price lookup)
-            if (needsLookup) {
-                // Flush currency rates every 5 successful lookups to ensure we don't lose fetched prices
+            // Only wait if we actually called the API
+            if (apiCalled) {
                 if (priceLookupsAttempted > 0 && priceLookupsAttempted % 5 === 0) {
                     console.log(`Flushing currency rates to disk (processed ${priceLookupsAttempted} lookups)...`);
                     await currencyRateStorage.flush?.();
                 }
-                
-                // Wait 2.5 seconds between API calls to stay under 30/minute limit (with some buffer)
                 await new Promise(resolve => setTimeout(resolve, 2500));
             }
         } catch (error: any) {
             console.warn(`Error processing transaction ${transaction.id}: ${error.message}`);
-            result.push(transaction); // Add original transaction even if price lookup failed
-            
-            // Flush currency rates even on error to save any successful lookups that happened before the error
+            result.push(transaction);
             console.log('Flushing currency rates after error to preserve successful lookups...');
             await currencyRateStorage.flush?.();
         }
@@ -189,52 +183,57 @@ function needsPriceLookup(transaction: Transaction): boolean {
     return isRewardWithMissingPrice;
 }
 
-async function fillMissingPrice(transaction: Transaction, nativeCurrency: string, exchangeRateService: ExchangeRateService): Promise<Transaction> {
+async function fillMissingPrice(transaction: Transaction, nativeCurrency: string, exchangeRateService: ExchangeRateService): Promise<FillMissingPriceResult> {
     // Skip if price is already set and not zero
     if (transaction.price && transaction.price > 0) {
-        return transaction;
+        return { transaction, apiCalled: false };
     }
 
     // Only attempt price lookup for reward transactions (staking rewards, airdrops, etc.)
     // Regular TRADE transactions should already have prices from the exchange
     if (!transaction.isReward()) {
-        // Log a warning if a trade has missing price - this might indicate data quality issues
         if (!transaction.price || transaction.price <= 0) {
             console.warn(`Trade transaction ${transaction.id} is missing price data - this may indicate a CSV data issue`);
         }
-        return transaction;
+        return { transaction, apiCalled: false };
     }
 
+    let apiCalled = false;
     try {
-        // Check if the base currency is a cryptocurrency that needs price lookup
         if (!isFiat(transaction.baseCurrency)) {
             console.log(`Looking up price for ${transaction.baseCurrency} on ${transaction.dateTime.toISOString().split('T')[0]} (${transaction.type} reward)`);
-            
-            // Get crypto price in the quote currency (or native currency if quote is also crypto)
             const targetCurrency = isFiat(transaction.quoteCurrency) ? transaction.quoteCurrency : nativeCurrency;
-            const cryptoPrice = await exchangeRateService.getCryptoPriceInCurrency(
-                transaction.baseCurrency, 
-                targetCurrency, 
-                transaction.dateTime
-            );
-            
-            // Update the transaction with the fetched price
-            transaction.price = cryptoPrice;
-            transaction.quoteSize = transaction.baseSize * cryptoPrice;
+            // Try to get price from cache via getCryptoPriceInCurrency, but detect if API was called
+            let cacheHit = false;
+            let cryptoPrice: number | undefined;
+            // We'll wrap getCryptoPriceInCurrency to detect cache hit by timing and error handling
+            // But since getCryptoPriceInCurrency always checks cache first, we can do a manual cache check here
+            const normalizedDate = new Date(transaction.dateTime.getFullYear(), transaction.dateTime.getMonth(), transaction.dateTime.getDate());
+            // Use exchangeRateService['rateStorage'] to access cache
+            const cachedRate = await exchangeRateService['rateStorage'].getRate(transaction.baseCurrency.toUpperCase(), targetCurrency.toUpperCase(), normalizedDate);
+            if (cachedRate) {
+                cryptoPrice = cachedRate.price;
+                cacheHit = true;
+            } else {
+                cryptoPrice = await exchangeRateService.getCryptoPriceInCurrency(
+                    transaction.baseCurrency,
+                    targetCurrency,
+                    transaction.dateTime
+                );
+                cacheHit = false;
+            }
+            apiCalled = !cacheHit;
+            // Default to 0 if undefined
+            transaction.price = typeof cryptoPrice === 'number' ? cryptoPrice : 0;
+            transaction.quoteSize = transaction.baseSize * (typeof cryptoPrice === 'number' ? cryptoPrice : 0);
             transaction.quoteSizeNative = transaction.quoteSize;
             transaction.nativeCurrency = targetCurrency;
-            
-            console.log(`Price lookup successful: ${transaction.baseCurrency} = ${cryptoPrice} ${targetCurrency} on ${transaction.dateTime.toISOString().split('T')[0]} (${transaction.type})`);
-            
-            // Note: ExchangeRateService already handles caching internally and flushes when needed
-            // The rate storage will be flushed by the calling function to ensure persistence
+            console.log(`Price lookup successful: ${transaction.baseCurrency} = ${transaction.price} ${targetCurrency} on ${transaction.dateTime.toISOString().split('T')[0]} (${transaction.type})`);
         }
     } catch (error: any) {
         console.warn(`Failed to fetch price for ${transaction.baseCurrency} on ${transaction.dateTime.toISOString().split('T')[0]} (${transaction.type}): ${error.message}`);
-        // Continue with the original transaction even if price lookup fails
     }
-
-    return transaction;
+    return { transaction, apiCalled };
 }
 
 async function splitCryptoCryptoTransaction(transaction: Transaction, nativeCurrency: string, currencyRateStorage: CurrencyRateStorage): Promise<Transaction[]> {
