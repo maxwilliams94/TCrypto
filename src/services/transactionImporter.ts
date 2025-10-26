@@ -4,8 +4,7 @@ import { isCryptoCryptoTransaction, Transaction } from '../models/transaction';
 import { TransactionStorage } from '../repositories/storage';
 import { ExchangeRateService } from './exchangeRateService';
 import { FileRepository } from '../repositories/file';
-
-const exchangeRateService = new ExchangeRateService();
+import { CurrencyRateStorage } from '../repositories/currencyRateStorage';
 
 export async function loadTransactionData(filePath: string, nativeCurrency: string): Promise<Array<Transaction>>{
     const data: Transaction[] = [];
@@ -43,7 +42,7 @@ export async function loadTransactionData(filePath: string, nativeCurrency: stri
 }
 
 
-export async function importInitialTransactions(storage: TransactionStorage, nativeCurrency: string = 'NOK'): Promise<void> {
+export async function importInitialTransactions(storage: TransactionStorage, currencyRateStorage: CurrencyRateStorage, nativeCurrency: string = 'NOK'): Promise<void> {
     let transactionDir = process.env.TRANSACTION_DIR;
     if (!transactionDir) {
         transactionDir = process.cwd();
@@ -80,7 +79,7 @@ export async function importInitialTransactions(storage: TransactionStorage, nat
             try {
                 const transactions: Array<Transaction> = await loadTransactionData(filePath, 'NOK');
                 const splitTransactions = await Promise.all(
-                    transactions.map(async (transaction: Transaction) => await splitCryptoCryptoTransaction(transaction, nativeCurrency))
+                    transactions.map(async (transaction: Transaction) => await splitCryptoCryptoTransaction(transaction, nativeCurrency, currencyRateStorage))
                 );
                 
                 // Only add transactions that don't already exist
@@ -109,10 +108,11 @@ export async function importInitialTransactions(storage: TransactionStorage, nat
     }
 }
 
-async function splitCryptoCryptoTransaction(transaction: Transaction, nativeCurrency: string): Promise<Transaction[]> {
+async function splitCryptoCryptoTransaction(transaction: Transaction, nativeCurrency: string, currencyRateStorage: CurrencyRateStorage): Promise<Transaction[]> {
     if (!isCryptoCryptoTransaction(transaction)) return [transaction];
 
     //split the transaction into two transactions as we must consider the quote currency as being sold
+    const exchangeRateService = new ExchangeRateService(currencyRateStorage);
     const exchangeRate: number = await exchangeRateService.getCcyNokRate(transaction.quoteCurrency, transaction.dateTime)
     console.log("Exchange rate for", transaction.quoteCurrency, "on", transaction.dateTime, "is", exchangeRate);
     const sellTransaction = new Transaction(
