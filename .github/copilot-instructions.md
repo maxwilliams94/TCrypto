@@ -1,22 +1,26 @@
 ## Project overview
 
-TCrypto is a small TypeScript/Node service for importing, normalising and reporting on crypto transactions (CSV import -> in-memory repository -> tax/profit reporting endpoints).
+TCrypto is a TypeScript/Node service for importing, normalising and reporting on crypto transactions with comprehensive support for different transaction types including staking rewards (CSV import -> repository -> tax/profit reporting endpoints).
 
 Key directories/files to read first:
+- `src/models/transaction.ts` — Enhanced Transaction model with TransactionType enum supporting 'TRADE', 'STAKING_REWARD', 'LENDING_REWARD', 'AIRDROP', 'MINING_REWARD', 'FORK', 'TRANSFER_IN', 'TRANSFER_OUT'. Contains reward-specific fields (validator, epoch, rewardSource).
 - `src/services/transactionImporter.ts` — CSV parsing, strict header validation, and the import flow that may split crypto/crypto trades into two native-currency transactions.
-- `src/services/exchangeRateService.ts` — fetches FX rates from Norges Bank and caches results.
+- `src/services/exchangeRateService.ts` — Enhanced with CoinGecko API integration for crypto price fetching alongside Norges Bank FX rates. Supports historical crypto prices and batch operations.
 - `src/repositories/storage.ts` — `TransactionStorage` interface; implement this to add persistent storage.
-- `src/repositories/memory.ts` — in-memory singleton repository (default).
 - `src/repositories/file.ts` — file-based JSON persistence (enable with `USE_FILE_STORAGE=true`).
-- `src/models/transaction.ts` — canonical Transaction shape and helper `isCryptoCryptoTransaction()`.
-- `src/services/profitReporter.ts` — tax/profit calculation (FIFO style by default).
+- `src/services/profitReporter.ts` — tax/profit calculation (FIFO style) that correctly handles reward transactions as BUY transactions.
 
 ## Big-picture architecture and dataflow
-- CSV files are read by `importInitialTransactions()` in `transactionImporter.ts` (env var `TRANSACTION_DIR` or cwd). Each CSV row becomes a `Transaction`.
+- **Transaction-centric design**: All crypto activities (trades, staking rewards, airdrops) are unified as `Transaction` objects with different `type` values.
+- CSV files are read by `importInitialTransactions()` in `transactionImporter.ts` (env var `TRANSACTION_DIR` or cwd). Each CSV row becomes a `Transaction` with `type: 'TRADE'`.
 - **Import process**: loads existing transactions from storage first, then processes CSVs and skips duplicates by transaction ID.
 - Crypto/crypto trades are transformed by `splitCryptoCryptoTransaction()` into two transactions: a SELL for the quote currency into the native currency (default NOK) and a BUY of the base currency priced in the native currency.
-- Exchange rates are resolved via `ExchangeRateService.getCcyNokRate(currency, date)` which calls an external API and caches values keyed by `${currency}-${date}`.
-- Transactions are stored via the `TransactionStorage` interface; the repo ships with an in-memory implementation (`createTransactionRespository()`). The server serves endpoints in `src/routes/*`.
+- **Dual exchange rate system**: 
+  - Norges Bank API for fiat currencies via `ExchangeRateService.getCcyNokRate(currency, date)`
+  - CoinGecko API for crypto prices via `ExchangeRateService.getCryptoPriceInCurrency(crypto, currency, date)`
+  - Both systems cache values with persistent storage support
+- **Reward transactions**: Created as BUY transactions with reward-specific metadata (validator, epoch, rewardSource). Tax reporting treats rewards as taxable income events.
+- Transactions are stored via the `TransactionStorage` interface with repository pattern. Server exposes unified `/transactions` endpoint with filtering by type, asset, date range.
 
 ## Developer workflows (how to run/build/debug)
 - Install deps: `npm install` (standard).
@@ -28,6 +32,7 @@ Key directories/files to read first:
   - `TRANSACTION_DIR` — folder containing CSV files to import (defaults to process.cwd()).
   - `USE_FILE_STORAGE` — set to `'true'` to use file-based persistence instead of in-memory (default: false).
   - `DATA_FILE_PATH` — path to JSON storage file (default: `./data/transactions.json`).
+  - `CURRENCY_RATES_FILE_PATH` — path to currency rates cache file (default: `./data/currency-rates.json`).
 
 Example: to run dev with CSVs in `assets/` and file-based storage:
 ```
@@ -42,16 +47,20 @@ TRANSACTION_DIR=assets USE_FILE_STORAGE=true npm run dev
   - `MemoryRepository` (default) — singleton, data lost on restart.
   - `FileRepository` (opt-in via `USE_FILE_STORAGE=true`) — persists to JSON, auto-loads on startup, includes CSV export at `GET /transactions/export/csv`.
 - Storage selection happens in `src/index.ts` at startup; the chosen repository is exported and imported by routes.
+- **Transaction filtering**: Use query params on `/transactions` endpoint: `?type=STAKING_REWARD&asset=ETH&startDate=2024-01-01&endDate=2024-12-31`.
 
 ## Integration points & external dependencies
 - External HTTP calls:
   - `src/services/exchangeRateService.ts` calls Norges Bank API (`data.norges-bank.no`). The service caches responses in-memory.
+  - CoinGecko API (`api.coingecko.com/api/v3`) for crypto price data with comprehensive symbol mapping and rate limiting.
 - CSV input files: any change to header names or date formats requires updates to `loadTransactionData()`.
 
 ## Practical examples for an AI agent
 - To add persistent storage: implement `TransactionStorage` and return your implementation from a factory in place of `createTransactionRespository()` (see `src/repositories/memory.ts`).
 - To change native currency handling: update `importInitialTransactions()` call in `src/index.ts` and the `splitCryptoCryptoTransaction()` usage; note the importer currently calls `loadTransactionData(filePath, 'NOK')`.
 - To debug FX caching issues: inspect `ExchangeRateService.getCcyNokRate()` — cache keys are `${currency}-${date}` (the `date` object is stringified), and `getLatestWorkingDay(date)` mutates the passed Date object.
+- **Adding staking rewards**: Use `POST /transactions` with `type: 'STAKING_REWARD'`, `side: 'BUY'`, and include optional `validator`, `epoch`, `rewardSource` fields.
+- **Querying rewards**: Use `GET /transactions?type=STAKING_REWARD` to filter for reward transactions only.
 
 ## Quick gotchas worth knowing
 - `package.json` scripts:
@@ -61,9 +70,12 @@ TRANSACTION_DIR=assets USE_FILE_STORAGE=true npm run dev
 - Exchange rate cache key uses the Date object stringification; expect cache misses if dates are mutated or not normalised to YYYY-MM-DD.
 - There are no unit tests in the repo. Adding unit tests should target `loadTransactionData`, `splitCryptoCryptoTransaction`, `ExchangeRateService` (mock HTTP) and `generateTaxReport` logic.
 
-## If you change code, prefer small, focused edits
-- Small PRs that add unit tests for importer and reporter are highly valuable.
-- When changing CSV parsing, include a sample CSV in `assets/` and update `README.md` with header expectations.
+## Recent architectural decisions (important context)
+**Why transaction-based rewards over separate staking entities:**
+- Initial implementation had separate `StakingReward` models and dedicated `/staking-rewards` endpoints, but this created architectural complexity.
+- **Current approach**: Staking rewards are simply `Transaction` objects with `type: 'STAKING_REWARD'`. This ensures unified tax reporting, consistent storage patterns, and simpler API surface.
+- **Result**: All crypto activities (trades, rewards, airdrops) flow through the same transaction processing pipeline. Use `/transactions?type=STAKING_REWARD` instead of separate reward endpoints.
+- **Tax implications**: Reward transactions are treated as BUY transactions by `profitReporter.ts`, making them taxable income events at market value when received.
 
 ## Future architecture: backend + front-end design
 The current architecture is designed for backend expansion with a future front-end. Key considerations:

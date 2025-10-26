@@ -6,6 +6,7 @@ import { TransactionStorage } from './repositories/storage';
 import { createCurrencyRateRepository } from './repositories/currencyRateMemory';
 import { createCurrencyRateFileRepository, CurrencyRateFileRepository } from './repositories/currencyRateFile';
 import { CurrencyRateStorage } from './repositories/currencyRateStorage';
+
 import { importInitialTransactions } from './services/transactionImporter';
 import { transactionsRouter } from './routes/transactions';
 import { taxRouter } from './routes/tax';
@@ -17,6 +18,7 @@ const PORT: string | number = process.env.PORT || 3000;
 const USE_FILE_STORAGE: boolean = process.env.USE_FILE_STORAGE === 'true';
 const DATA_FILE_PATH: string = process.env.DATA_FILE_PATH || './data/transactions.json';
 const CURRENCY_RATES_FILE_PATH: string = process.env.CURRENCY_RATES_FILE_PATH || './data/currency-rates.json';
+
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -47,6 +49,8 @@ async function gracefulShutdown(signal: string) {
         console.log('Flushing currency rates to disk...');
         await currencyRateRepository.flush();
     }
+    
+
     
     console.log('Shutdown complete. Exiting.');
     process.exit(0);

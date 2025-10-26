@@ -22,13 +22,14 @@ export async function loadTransactionData(filePath: string, nativeCurrency: stri
                 row.Id,
                 row.Market.split('-')[0].trim(),
                 row.Market.split('-')[1].trim(),
-                row.Exchange,
+                row.Exchange || 'unknown',
                 row.Side,
                 parseFloat(row.FilledQuantity),
                 parseFloat(row.FilledQuote),
                 parseFloat(row.FilledPrice),
                 parseFloat(row.Fee || '0'),
-                new Date(row['Filled At'])
+                new Date(row['Filled At']),
+                'TRADE' // Default type for CSV imported transactions
             )
             data.push(transaction);
         })
@@ -125,7 +126,8 @@ async function splitCryptoCryptoTransaction(transaction: Transaction, nativeCurr
         transaction.quoteSize * exchangeRate,
         exchangeRate,
         0,
-        transaction.dateTime);
+        transaction.dateTime,
+        'TRADE');
     const buyTransaction = new Transaction(
         transaction.id + '-buy',
         transaction.baseCurrency,
@@ -136,7 +138,8 @@ async function splitCryptoCryptoTransaction(transaction: Transaction, nativeCurr
         transaction.quoteSize * exchangeRate,
         transaction.price * exchangeRate,
         transaction.fee * exchangeRate,
-        transaction.dateTime
+        transaction.dateTime,
+        'TRADE'
     );
     console.log("Split transaction into:", sellTransaction.toSimpleJSON(), buyTransaction.toSimpleJSON());
     return [sellTransaction, buyTransaction];
