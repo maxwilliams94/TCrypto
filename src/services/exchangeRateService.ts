@@ -5,8 +5,54 @@ import { CurrencyRateStorage } from '../repositories/currencyRateStorage';
 export class ExchangeRateService {
     private BASE_URL = 'https://data.norges-bank.no/api/data/EXR/B.CCY.NOK.SP';
     private cryptoApiBaseUrl = 'https://api.coingecko.com/api/v3';
+    private coinGeckoApiKey: string | undefined;
     
-    constructor(private rateStorage: CurrencyRateStorage) {}
+    constructor(private rateStorage: CurrencyRateStorage) {
+        this.coinGeckoApiKey = process.env.COINGECKO_API_KEY;
+        if (this.coinGeckoApiKey) {
+            console.log('CoinGecko API key found - using authenticated requests');
+        } else {
+            console.log('WARNING: No CoinGecko API key found. CoinGecko now requires API keys for all requests.');
+            console.log('Sign up for a free Demo account at https://www.coingecko.com/en/api/pricing');
+            console.log('Set COINGECKO_API_KEY environment variable to enable crypto price fetching.');
+        }
+    }
+
+    /**
+     * Helper method to create CoinGecko API requests with required authentication.
+     * CoinGecko no longer supports unauthenticated requests.
+     */
+    private async makeCoingeckoRequest(url: string): Promise<any> {
+        if (!this.coinGeckoApiKey) {
+            throw new Error(
+                'CoinGecko API key is required. Get a free Demo account at https://www.coingecko.com/en/api/pricing ' +
+                'and set the COINGECKO_API_KEY environment variable.'
+            );
+        }
+
+        const config = {
+            headers: {
+                'x-cg-demo-api-key': this.coinGeckoApiKey
+            }
+        };
+
+        try {
+            const response = await axios.get(url, config);
+            return response;
+        } catch (error) {
+            if (axios.isAxiosError(error)) {
+                console.error(`CoinGecko API error: ${error.response?.status} - ${error.response?.statusText}`);
+                console.error('URL:', url);
+                if (error.response?.status === 401) {
+                    console.error('Authentication failed - check your CoinGecko API key');
+                    console.error('Get a free API key at: https://www.coingecko.com/en/api/pricing');
+                } else if (error.response?.status === 429) {
+                    console.error('Rate limit exceeded - Demo plan allows 30 calls/minute, 10k calls/month');
+                }
+            }
+            throw error;
+        }
+    }
 
     /**
      * Fetches the currency to NOK exchange rate for a specific date.
@@ -15,8 +61,9 @@ export class ExchangeRateService {
      * @returns The exchange rate as a number.
      */
     async getCcyNokRate(currency: string, date: Date): Promise<number> {
-        // Try to get from storage first
-        const existingRate = await this.rateStorage.getRate(currency, 'NOK', date);
+        // Try to get from storage first (normalize date to start of day)
+        const normalizedDate = this.normalizeDate(date);
+        const existingRate = await this.rateStorage.getRate(currency, 'NOK', normalizedDate);
         if (existingRate) {
             return existingRate.price;
         }
@@ -24,8 +71,8 @@ export class ExchangeRateService {
         // Fetch from Norges Bank API
         const rate = await this.fetchNorgesBankRate(currency, date);
         
-        // Store for future use
-        const currencyRate = new CurrencyRate(currency, 'NOK', rate, date, 'norges-bank');
+        // Store for future use (normalize date to start of day)
+        const currencyRate = new CurrencyRate(currency, 'NOK', rate, normalizedDate, 'norges-bank');
         await this.rateStorage.add(currencyRate);
         await this.rateStorage.flush?.(); // Persist if supported
 
@@ -39,8 +86,9 @@ export class ExchangeRateService {
      * @returns The exchange rate as a number.
      */
     async getCryptoUsdRate(cryptoSymbol: string, date: Date): Promise<number> {
-        // Try storage first
-        const existingRate = await this.rateStorage.getRate(cryptoSymbol, 'USD', date);
+        // Try storage first (normalize date to start of day)
+        const normalizedDate = this.normalizeDate(date);
+        const existingRate = await this.rateStorage.getRate(cryptoSymbol, 'USD', normalizedDate);
         if (existingRate) {
             return existingRate.price;
         }
@@ -48,8 +96,8 @@ export class ExchangeRateService {
         // Fetch from crypto API
         const rate = await this.fetchCryptoRate(cryptoSymbol, date);
         
-        // Store for future use
-        const currencyRate = new CurrencyRate(cryptoSymbol, 'USD', rate, date, 'coingecko');
+        // Store for future use (normalize date to start of day)
+        const currencyRate = new CurrencyRate(cryptoSymbol, 'USD', rate, normalizedDate, 'coingecko');
         await this.rateStorage.add(currencyRate);
         await this.rateStorage.flush?.();
 
@@ -86,8 +134,9 @@ export class ExchangeRateService {
     async getCryptoPriceInCurrency(cryptoSymbol: string, quoteCurrency: string, date: Date): Promise<number> {
         const normalizedQuote = quoteCurrency.toLowerCase();
         
-        // Try storage first
-        const existingRate = await this.rateStorage.getRate(cryptoSymbol.toUpperCase(), quoteCurrency.toUpperCase(), date);
+        // Try storage first (normalize date to start of day)
+        const normalizedDate = this.normalizeDate(date);
+        const existingRate = await this.rateStorage.getRate(cryptoSymbol.toUpperCase(), quoteCurrency.toUpperCase(), normalizedDate);
         if (existingRate) {
             return existingRate.price;
         }
@@ -95,12 +144,12 @@ export class ExchangeRateService {
         // Fetch from CoinGecko API
         const price = await this.fetchCryptoHistoricalPrice(cryptoSymbol, normalizedQuote, date);
         
-        // Store for future use
+        // Store for future use (normalize date to start of day)
         const currencyRate = new CurrencyRate(
             cryptoSymbol.toUpperCase(), 
             quoteCurrency.toUpperCase(), 
             price, 
-            date, 
+            normalizedDate, 
             'coingecko'
         );
         await this.rateStorage.add(currencyRate);
@@ -122,7 +171,7 @@ export class ExchangeRateService {
         const url = `${this.cryptoApiBaseUrl}/simple/price?ids=${coinId}&vs_currencies=${normalizedQuote}`;
 
         try {
-            const response = await axios.get(url);
+            const response = await this.makeCoingeckoRequest(url);
             const price = response.data?.[coinId]?.[normalizedQuote];
 
             if (price) {
@@ -148,10 +197,11 @@ export class ExchangeRateService {
         const results = new Map<string, number>();
         const normalizedQuote = quoteCurrency.toLowerCase();
         
-        // Try to get cached prices first
+        // Try to get cached prices first (normalize date to start of day)
+        const normalizedDate = this.normalizeDate(date);
         const uncachedSymbols: string[] = [];
         for (const symbol of cryptoSymbols) {
-            const existingRate = await this.rateStorage.getRate(symbol.toUpperCase(), quoteCurrency.toUpperCase(), date);
+            const existingRate = await this.rateStorage.getRate(symbol.toUpperCase(), quoteCurrency.toUpperCase(), normalizedDate);
             if (existingRate) {
                 results.set(symbol.toUpperCase(), existingRate.price);
             } else {
@@ -165,12 +215,13 @@ export class ExchangeRateService {
                 const price = await this.fetchCryptoHistoricalPrice(symbol, normalizedQuote, date);
                 results.set(symbol.toUpperCase(), price);
                 
-                // Store for future use
+                // Store for future use (normalize date to start of day)
+                const normalizedDate = this.normalizeDate(date);
                 const currencyRate = new CurrencyRate(
                     symbol.toUpperCase(), 
                     quoteCurrency.toUpperCase(), 
                     price, 
-                    date, 
+                    normalizedDate, 
                     'coingecko'
                 );
                 await this.rateStorage.add(currencyRate);
@@ -198,7 +249,7 @@ export class ExchangeRateService {
         const url = `${this.cryptoApiBaseUrl}/coins/${coinId}/history?date=${dateStr}&localization=false`;
 
         try {
-            const response = await axios.get(url);
+            const response = await this.makeCoingeckoRequest(url);
             const price = response.data?.market_data?.current_price?.[quoteCurrency.toLowerCase()];
 
             if (price) {
@@ -274,6 +325,14 @@ export class ExchangeRateService {
         const now = new Date();
         const diffInDays = (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24);
         return diffInDays <= 7; // Consider within last 7 days as "recent"
+    }
+
+    /**
+     * Normalize date to start of day (00:00:00) to ensure consistent caching
+     * This prevents multiple cache entries for the same date with different times
+     */
+    private normalizeDate(date: Date): Date {
+        return new Date(date.getFullYear(), date.getMonth(), date.getDate());
     }
 }
 

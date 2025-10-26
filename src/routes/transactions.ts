@@ -65,7 +65,6 @@ transactionsRouter.post('/', async (req: Request, res: Response) => {
         if (!baseCurrency || !baseSize || !dateTime) {
             res.status(400).json({ error: 'Missing required fields: baseCurrency, baseSize, dateTime' });
             return;
-            return;
         }
         
         const quoteSize = parseFloat(baseSize) * parseFloat(price);
