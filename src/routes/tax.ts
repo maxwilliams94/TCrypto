@@ -1,6 +1,6 @@
 import express, { Express, Request, Response } from 'express';
 import { generateTaxReport } from '../services/profitReporter';
-import { transactionRepository } from '../index';
+import { transactionRepository, currencyRateRepository } from '../index';
 
 export const taxRouter = express.Router();
 
@@ -12,7 +12,7 @@ taxRouter.get('/', (req: Request, res: Response) => {
     transactionRepository
         .getAll()
         .then((transactions) => {
-            return generateTaxReport(transactions, "NOK", startDate, endDate);
+            return generateTaxReport(transactions, "NOK", startDate, endDate, 'FIFO', currencyRateRepository);
         })
         .then((report) => {
             res.send(report);

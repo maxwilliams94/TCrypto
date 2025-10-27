@@ -107,23 +107,48 @@ export class ExchangeRateService {
     }
 
     private async fetchNorgesBankRate(currency: string, date: Date): Promise<number> {
-        const workingDate = getLatestWorkingDay(new Date(date)); // Don't mutate original date
         const base_url = this.BASE_URL.replace('CCY', mapCurrency(currency).toUpperCase());
-        const url = `${base_url}?format=sdmx-json&startPeriod=${formatDateToYYYYMMDD(workingDate)}&endPeriod=${formatDateToYYYYMMDD(workingDate)}&locale=en`;
+        
+        // Try up to 10 days back to handle weekends and bank holidays
+        const maxRetries = 10;
+        let currentDate = new Date(date); // Don't mutate original date
+        
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+            const url = `${base_url}?format=sdmx-json&startPeriod=${formatDateToYYYYMMDD(currentDate)}&endPeriod=${formatDateToYYYYMMDD(currentDate)}&locale=en`;
 
-        try {
-            const response = await axios.get(url);
-            const observations = response.data?.data?.dataSets?.[0]?.series?.['0:0:0:0']?.observations;
+            try {
+                const response = await axios.get(url);
+                const observations = response.data?.data?.dataSets?.[0]?.series?.['0:0:0:0']?.observations;
 
-            if (observations && observations['0'] && observations['0'][0]) {
-                return parseFloat(observations['0'][0]);
-            } else {
-                throw new Error('Exchange rate data not found for the specified date.');
+                if (observations && observations['0'] && observations['0'][0]) {
+                    if (attempt > 0) {
+                        console.log(`Found exchange rate for ${currency} on ${formatDateToYYYYMMDD(currentDate)} (requested: ${formatDateToYYYYMMDD(date)})`);
+                    }
+                    return parseFloat(observations['0'][0]);
+                }
+                // No data in response - try previous day
+                console.warn(`No data from Norges Bank for ${currency} on ${formatDateToYYYYMMDD(currentDate)}, trying previous day...`);
+            } catch (error) {
+                if (axios.isAxiosError(error)) {
+                    // 404 means no data for this date (non-working day)
+                    if (error.response?.status === 404) {
+                        console.warn(`No data from Norges Bank for ${currency} on ${formatDateToYYYYMMDD(currentDate)} (404), trying previous day...`);
+                    } else {
+                        // Other HTTP errors might be more serious, but still try previous day
+                        console.warn(`HTTP ${error.response?.status} from Norges Bank for ${currency} on ${formatDateToYYYYMMDD(currentDate)}, trying previous day...`);
+                    }
+                } else {
+                    // Non-axios error - something more serious, don't retry
+                    console.error('Error fetching exchange rate from Norges Bank:', error);
+                    throw new Error('Failed to fetch exchange rate.');
+                }
             }
-        } catch (error) {
-            console.error('Error fetching exchange rate from Norges Bank:', error);
-            throw new Error('Failed to fetch exchange rate.');
+            
+            // Go back one day and try again
+            currentDate.setDate(currentDate.getDate() - 1);
         }
+        
+        throw new Error(`Failed to fetch exchange rate for ${currency} after ${maxRetries} attempts (from ${formatDateToYYYYMMDD(date)} back to ${formatDateToYYYYMMDD(currentDate)}).`);
     }
 
     /**
@@ -435,18 +460,4 @@ function mapCurrency(currency: string): string {
         return 'USD';
     }
     return currency;
-}
-
-function getLatestWorkingDay(date: Date): Date {
-    const dayOfWeek = date.getDay(); // 0 = Sunday, 6 = Saturday
-
-    if (dayOfWeek === 0) {
-        // If it's Sunday, go back to Friday
-        date.setDate(date.getDate() - 2);
-    } else if (dayOfWeek === 6) {
-        // If it's Saturday, go back to Friday
-        date.setDate(date.getDate() - 1);
-    }
-
-    return date;
 }

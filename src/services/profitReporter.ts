@@ -1,8 +1,18 @@
 import { TaxReport } from "../models/taxReport";
 import { Transaction } from "../models/transaction";
+import { ExchangeRateService } from "./exchangeRateService";
+import { CurrencyRateStorage } from "../repositories/currencyRateStorage";
 
-export function generateTaxReport(transactions: Transaction[], nativeCurrency: string, periodStart: Date, periodEnd: Date, accountingMethod: string = 'FIFO'): TaxReport {
+export async function generateTaxReport(
+    transactions: Transaction[], 
+    nativeCurrency: string, 
+    periodStart: Date, 
+    periodEnd: Date, 
+    accountingMethod: string = 'FIFO',
+    currencyRateStorage: CurrencyRateStorage
+): Promise<TaxReport> {
     const taxReport = new TaxReport(periodStart, periodEnd, nativeCurrency, accountingMethod);
+    const exchangeRateService = new ExchangeRateService(currencyRateStorage);
 
     taxReport.transactions = transactions.filter(transaction => 
         inScope(transaction.dateTime, periodStart, periodEnd)
@@ -40,8 +50,26 @@ export function generateTaxReport(transactions: Transaction[], nativeCurrency: s
                     continue;
                 }
                 const sellAmount = Math.min(remainingAsset.get(t.baseCurrency)!, toSell);
+                const buyTransaction = taxReport.transactions[buyPointers.get(t.baseCurrency)!];
                 console.debug(`Selling ${toSell} ${t.baseCurrency} into available ${remainingAsset.get(t.baseCurrency)} at index ${buyPointers.get(t.baseCurrency)!}`);
-                cumulativeCostBasis += taxReport.transactions[buyPointers.get(t.baseCurrency)!].price * sellAmount;
+                
+                // Convert buy price to native currency if needed
+                let buyPriceInNative = buyTransaction.price;
+                if (buyTransaction.quoteCurrency !== nativeCurrency) {
+                    console.debug(`Converting buy price from ${buyTransaction.quoteCurrency} to ${nativeCurrency} for cost basis calculation`);
+                    let exchangeRate: number;
+                    if (isFiat(buyTransaction.quoteCurrency)) {
+                        // For fiat currencies, use Norges Bank API
+                        exchangeRate = await exchangeRateService.getCcyNokRate(buyTransaction.quoteCurrency, buyTransaction.dateTime);
+                    } else {
+                        // For crypto currencies in quote position, use CoinGecko API
+                        exchangeRate = await exchangeRateService.getCryptoPriceInCurrency(buyTransaction.quoteCurrency, nativeCurrency, buyTransaction.dateTime);
+                    }
+                    buyPriceInNative = buyTransaction.price * exchangeRate;
+                    console.debug(`Buy price ${buyTransaction.price} ${buyTransaction.quoteCurrency} converted to ${buyPriceInNative} ${nativeCurrency} (rate: ${exchangeRate})`);
+                }
+                
+                cumulativeCostBasis += buyPriceInNative * sellAmount;
                 remainingAsset.set(t.baseCurrency, remainingAsset.get(t.baseCurrency)! - sellAmount);
                 toSell -= sellAmount!;
                 console.debug(`${t.baseCurrency} still to sell: ${toSell}`);
@@ -80,4 +108,8 @@ function nextBuy(transactions: Transaction[], startIndex: number, baseCurrency: 
         }
     }
     return -1; // No buy found
+}
+function isFiat(currency: string): boolean {
+    const fiatCurrencies = ['USD', 'EUR', 'GBP', 'NOK', 'SEK', 'DKK', 'JPY', 'CNY', 'AUD', 'CAD'];
+    return fiatCurrencies.includes(currency.toUpperCase());
 }
