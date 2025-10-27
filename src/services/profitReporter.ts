@@ -1,6 +1,5 @@
 import { TaxReport } from "../models/taxReport";
 import { Transaction } from "../models/transaction";
-import { ExchangeRateService } from "./exchangeRateService";
 import { CurrencyRateStorage } from "../repositories/currencyRateStorage";
 
 export async function generateTaxReport(
@@ -12,7 +11,16 @@ export async function generateTaxReport(
     currencyRateStorage: CurrencyRateStorage
 ): Promise<TaxReport> {
     const taxReport = new TaxReport(periodStart, periodEnd, nativeCurrency, accountingMethod);
-    const exchangeRateService = new ExchangeRateService(currencyRateStorage);
+
+    // Verify that transactions have tax conversions populated
+    const missingConversions = transactions.filter(t => !t.hasTaxConversion());
+    if (missingConversions.length > 0) {
+        console.warn(
+            `Warning: ${missingConversions.length} transactions are missing tax conversions. ` +
+            `These should have been populated during import. Transaction IDs: ${missingConversions.slice(0, 5).map(t => t.id).join(', ')}` +
+            `${missingConversions.length > 5 ? '...' : ''}`
+        );
+    }
 
     taxReport.transactions = transactions.filter(transaction => 
         inScope(transaction.dateTime, periodStart, periodEnd)
@@ -30,7 +38,7 @@ export async function generateTaxReport(
         if (inScope(t.dateTime, periodStart, periodEnd)) {
             taxReport.assets!.add(t.baseCurrency);
             taxReport.exchanges!.add(t.exchange);
-            taxReport.fees! += t.fee; // TODO handle fees when currency is not native to the taxReport
+            taxReport.fees! += t.getTaxFee(); // Use tax-converted fee
         }
         if (t.side === 'BUY') {
             if (inScope(t.dateTime, periodStart, periodEnd)) taxReport.buys!++;
@@ -53,21 +61,8 @@ export async function generateTaxReport(
                 const buyTransaction = taxReport.transactions[buyPointers.get(t.baseCurrency)!];
                 console.debug(`Selling ${toSell} ${t.baseCurrency} into available ${remainingAsset.get(t.baseCurrency)} at index ${buyPointers.get(t.baseCurrency)!}`);
                 
-                // Convert buy price to native currency if needed
-                let buyPriceInNative = buyTransaction.price;
-                if (buyTransaction.quoteCurrency !== nativeCurrency) {
-                    console.debug(`Converting buy price from ${buyTransaction.quoteCurrency} to ${nativeCurrency} for cost basis calculation`);
-                    let exchangeRate: number;
-                    if (isFiat(buyTransaction.quoteCurrency)) {
-                        // For fiat currencies, use Norges Bank API
-                        exchangeRate = await exchangeRateService.getCcyNokRate(buyTransaction.quoteCurrency, buyTransaction.dateTime);
-                    } else {
-                        // For crypto currencies in quote position, use CoinGecko API
-                        exchangeRate = await exchangeRateService.getCryptoPriceInCurrency(buyTransaction.quoteCurrency, nativeCurrency, buyTransaction.dateTime);
-                    }
-                    buyPriceInNative = buyTransaction.price * exchangeRate;
-                    console.debug(`Buy price ${buyTransaction.price} ${buyTransaction.quoteCurrency} converted to ${buyPriceInNative} ${nativeCurrency} (rate: ${exchangeRate})`);
-                }
+                // Use tax-converted price from the buy transaction (already in native currency)
+                const buyPriceInNative = buyTransaction.getTaxPrice();
                 
                 cumulativeCostBasis += buyPriceInNative * sellAmount;
                 remainingAsset.set(t.baseCurrency, remainingAsset.get(t.baseCurrency)! - sellAmount);
@@ -87,9 +82,10 @@ export async function generateTaxReport(
             } while (toSell > 0 && buyPointers.get(t.baseCurrency)! >= 0);
             if (inScope(t.dateTime, periodStart, periodEnd)) {
                 let costBasis: number = cumulativeCostBasis / t.baseSize;
-                var profit: number = (t.price - costBasis) * t.baseSize;
+                // Use tax-converted price for the sell transaction
+                var profit: number = (t.getTaxPrice() - costBasis) * t.baseSize;
                 taxReport.profit! += profit;
-                console.debug(`Profit selling ${t.baseSize} ${t.baseCurrency} at ${t.price} with cost basis of ${costBasis} is ${profit} ${nativeCurrency}`);
+                console.debug(`Profit selling ${t.baseSize} ${t.baseCurrency} at ${t.getTaxPrice()} with cost basis of ${costBasis} is ${profit} ${nativeCurrency}`);
             }
         }
     }
@@ -108,8 +104,4 @@ function nextBuy(transactions: Transaction[], startIndex: number, baseCurrency: 
         }
     }
     return -1; // No buy found
-}
-function isFiat(currency: string): boolean {
-    const fiatCurrencies = ['USD', 'EUR', 'GBP', 'NOK', 'SEK', 'DKK', 'JPY', 'CNY', 'AUD', 'CAD'];
-    return fiatCurrencies.includes(currency.toUpperCase());
 }

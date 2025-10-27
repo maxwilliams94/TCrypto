@@ -115,6 +115,13 @@ export async function importInitialTransactions(storage: TransactionStorage, cur
         const allTransactions = await storage.getAll();
         console.info(`Transaction import process completed. Added ${newTransactionCount} new transactions. Total: ${allTransactions.length} transactions in the repository.`);
         
+        // Populate tax conversions for all transactions (including existing ones)
+        if (newTransactionCount > 0 || allTransactions.some(t => !t.hasTaxConversion())) {
+            console.info(`Populating tax conversions for transactions (native currency: ${nativeCurrency})...`);
+            await populateTaxConversionsForImport(allTransactions, nativeCurrency, currencyRateStorage);
+            console.info('Tax conversion population complete');
+        }
+        
         // Flush any pending writes for file-based storage
         if (storage instanceof FileRepository) {
             await storage.flush();
@@ -289,3 +296,62 @@ function isFiat(currency: string): boolean {
     return fiatCurrencies.includes(currency.toUpperCase());
 }
 
+/**
+ * Populate tax conversion fields for all transactions during import.
+ * Only converts transactions that don't already have tax conversions.
+ * 
+ * @param transactions All transactions to process
+ * @param taxCurrency The currency to use for tax calculations
+ * @param currencyRateStorage Storage for exchange rates
+ */
+async function populateTaxConversionsForImport(
+    transactions: Transaction[],
+    taxCurrency: string,
+    currencyRateStorage: CurrencyRateStorage
+): Promise<void> {
+    const exchangeRateService = new ExchangeRateService(currencyRateStorage);
+    
+    // Filter transactions that need tax conversion
+    const transactionsNeedingConversion = transactions.filter(
+        t => !t.hasTaxConversion() || t.taxCurrency !== taxCurrency
+    );
+    
+    if (transactionsNeedingConversion.length === 0) {
+        console.log('All transactions already have tax conversions');
+        return;
+    }
+    
+    console.log(`Converting ${transactionsNeedingConversion.length} transactions to ${taxCurrency}`);
+    
+    for (const transaction of transactionsNeedingConversion) {
+        // Skip if quote currency is already the tax currency
+        if (transaction.quoteCurrency === taxCurrency) {
+            transaction.setTaxConversion(taxCurrency, 1.0, transaction.dateTime);
+            continue;
+        }
+
+        try {
+            // Fetch exchange rate for quote currency -> tax currency
+            let exchangeRate: number;
+            if (isFiat(transaction.quoteCurrency)) {
+                exchangeRate = await exchangeRateService.getCcyNokRate(transaction.quoteCurrency, transaction.dateTime);
+            } else {
+                exchangeRate = await exchangeRateService.getCryptoPriceInCurrency(
+                    transaction.quoteCurrency,
+                    taxCurrency,
+                    transaction.dateTime
+                );
+            }
+
+            // Set tax conversion fields
+            transaction.setTaxConversion(taxCurrency, exchangeRate, transaction.dateTime);
+            
+        } catch (error) {
+            console.warn(
+                `Failed to convert transaction ${transaction.id} from ${transaction.quoteCurrency} to ${taxCurrency}: ${error}`
+            );
+            // Fall back to no conversion (rate of 1.0)
+            transaction.setTaxConversion(taxCurrency, 1.0, transaction.dateTime);
+        }
+    }
+}

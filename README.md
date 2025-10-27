@@ -137,3 +137,5 @@ curl -X POST http://localhost:3000/transactions \
   }'
 ```
 
+# Norwegian Tax Rules
+https://www.skatteetaten.no/en/person/taxes/get-the-taxes-right/shares-and-securities/about-shares-and-securities/digital-currency/selling/

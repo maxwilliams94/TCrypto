@@ -19,6 +19,15 @@ export class Transaction {
     baseSizeRemaining?: number;
     soldOn?: Date;
     
+    // Tax accounting fields (for audit trail and tax reporting)
+    taxCurrency?: string;           // The currency used for tax calculation (e.g., 'NOK')
+    taxQuoteSize?: number;          // Quote size converted to tax currency
+    taxPrice?: number;              // Price per unit in tax currency (taxQuoteSize / baseSize)
+    taxFee?: number;                // Fee converted to tax currency
+    taxConversionRate?: number;     // Exchange rate used for conversion (quoteCurrency -> taxCurrency)
+    taxConversionDate?: Date;       // Date used for the exchange rate lookup
+    feeCurrency?: string;           // Currency of the fee (for future support of non-fiat fees)
+    
     // Staking/reward specific fields
     validator?: string;      // For staking rewards
     epoch?: number;          // For staking rewards
@@ -59,7 +68,7 @@ export class Transaction {
     }
 
     toSimpleJSON() {
-        return {
+        const baseInfo = {
             CCY: `${this.baseCurrency}-${this.quoteCurrency}`,
             exchange: this.exchange,
             side: this.side,
@@ -72,6 +81,20 @@ export class Transaction {
             epoch: this.epoch,
             rewardSource: this.rewardSource
         };
+
+        // Add tax conversion fields if available
+        if (this.hasTaxConversion()) {
+            return {
+                ...baseInfo,
+                taxCurrency: this.taxCurrency,
+                taxPrice: this.taxPrice,
+                taxQuoteSize: this.taxQuoteSize,
+                taxFee: this.taxFee,
+                taxConversionRate: this.taxConversionRate
+            };
+        }
+
+        return baseInfo;
     }
 
     /**
@@ -86,6 +109,60 @@ export class Transaction {
      */
     isTaxableIncome(): boolean {
         return this.isReward() || this.type === 'TRANSFER_IN';
+    }
+
+    /**
+     * Set tax-related fields for audit trail and tax reporting.
+     * This converts the transaction's quote currency values to the tax currency.
+     * 
+     * @param taxCurrency The currency to use for tax calculation (e.g., 'NOK')
+     * @param conversionRate Exchange rate from quoteCurrency to taxCurrency
+     * @param conversionDate Date used for the exchange rate lookup
+     * @param feeConversionRate Optional separate exchange rate for fee conversion (defaults to same as conversionRate)
+     */
+    setTaxConversion(
+        taxCurrency: string,
+        conversionRate: number,
+        conversionDate: Date,
+        feeConversionRate?: number
+    ): void {
+        this.taxCurrency = taxCurrency;
+        this.taxConversionRate = conversionRate;
+        this.taxConversionDate = conversionDate;
+        
+        // Convert quote size and price to tax currency
+        this.taxQuoteSize = this.quoteSize * conversionRate;
+        this.taxPrice = this.price * conversionRate;
+        
+        // Convert fee to tax currency (use separate rate if provided)
+        const feeRate = feeConversionRate !== undefined ? feeConversionRate : conversionRate;
+        this.taxFee = this.fee * feeRate;
+        
+        // Assume fee is in quote currency by default (can be overridden later)
+        if (!this.feeCurrency) {
+            this.feeCurrency = this.quoteCurrency;
+        }
+    }
+
+    /**
+     * Check if tax conversion has been applied to this transaction
+     */
+    hasTaxConversion(): boolean {
+        return this.taxCurrency !== undefined && this.taxPrice !== undefined;
+    }
+
+    /**
+     * Get the price to use for tax calculations (converted if available, original otherwise)
+     */
+    getTaxPrice(): number {
+        return this.taxPrice !== undefined ? this.taxPrice : this.price;
+    }
+
+    /**
+     * Get the fee to use for tax calculations (converted if available, original otherwise)
+     */
+    getTaxFee(): number {
+        return this.taxFee !== undefined ? this.taxFee : this.fee;
     }
   }
 
