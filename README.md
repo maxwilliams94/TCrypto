@@ -87,6 +87,54 @@ COINGECKO_API_KEY=your_demo_api_key_here npm run dev
 - `GET /transactions/export/csv` — Export to CSV (file storage only)
 - `GET /tax?start=YYYY-MM-DD&end=YYYY-MM-DD` — Generate tax report for date range
 
+### Export Endpoints
+
+Export tax reports and portfolio data to CSV for easy analysis:
+
+- `GET /export/transactions/csv` — Export all transactions (requires USE_FILE_STORAGE=true)
+- `GET /export/tax-report/complete?start=YYYY-MM-DD&end=YYYY-MM-DD&currency=NOK` — Export complete tax report (4 CSV files)
+- `GET /export/tax-report/sell-events?start=YYYY-MM-DD&end=YYYY-MM-DD` — Export sell events summary
+- `GET /export/tax-report/portfolio?start=YYYY-MM-DD&end=YYYY-MM-DD` — Export portfolio positions
+
+Example:
+```bash
+# Export complete 2024 tax report to CSV files
+curl "http://localhost:3000/export/tax-report/complete?start=2024-01-01&end=2024-12-31"
+
+# Export just sell events for Q1 2024
+curl "http://localhost:3000/export/tax-report/sell-events?start=2024-01-01&end=2024-03-31" --output sell_events_q1.csv
+
+# Export portfolio as of year-end
+curl "http://localhost:3000/export/tax-report/portfolio?start=2024-01-01&end=2024-12-31" --output portfolio_2024.csv
+```
+
+#### CSV Export Files
+
+When using `/export/tax-report/complete`, four CSV files are generated:
+
+1. **tax_report_summary_{dates}.csv** — Overall metrics (profit/loss, fees, transaction counts)
+2. **sell_events_{dates}.csv** — Summary of all sell events with 17 columns including:
+   - Date, Asset, Quantity, Proceeds, Cost Basis
+   - Sell Fee, Buy Fees, Net Profit/Loss
+   - FIFO Matching: Buy Count, Buy IDs, Buy Dates
+   - Currency information
+3. **sell_event_allocations_{dates}.csv** — Detailed FIFO matching (one row per buy allocation)
+   - Shows which specific buy lots matched each sell
+   - Includes quantity used from each lot
+   - Proportional cost basis and fees
+4. **portfolio_{dates}.csv** — Current holdings per asset with 12 columns:
+   - Quantity held, Cost basis, Average price
+   - Realized and unrealized gains/losses
+   - Period-specific activity (bought/sold)
+   - Total fees, Open vs Closed positions
+
+**Use cases:**
+- Import into Excel/Google Sheets for analysis
+- Sort by date, asset, profit/loss for insights
+- Verify FIFO matching with allocation details
+- Check portfolio positions and cost basis
+- Share with accountant for tax filing
+
 ### Tax Report Features
 
 The tax report endpoint provides detailed information for tax filing:

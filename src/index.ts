@@ -11,6 +11,7 @@ import { importInitialTransactions } from './services/transactionImporter';
 import { transactionsRouter } from './routes/transactions';
 import { taxRouter } from './routes/tax';
 import { currencyRatesRouter } from './routes/currencyRates';
+import exportRouter from './routes/export';
 
 export const app: Application = express();
 
@@ -70,6 +71,7 @@ app.get('/', (req: Request, res: Response) => {
 app.use('/transactions', transactionsRouter);
 app.use('/tax', taxRouter);
 app.use('/currency-rates', currencyRatesRouter);
+app.use('/export', exportRouter);
 
 async function main() {
     await importInitialTransactions(transactionRepository, currencyRateRepository)
