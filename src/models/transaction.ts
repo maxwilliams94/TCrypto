@@ -14,10 +14,6 @@ export class Transaction {
     fee: number;
     dateTime: Date;
     type: TransactionType;
-    quoteSizeNative?: number;
-    nativeCurrency?: string;
-    baseSizeRemaining?: number;
-    soldOn?: Date;
     
     // Tax accounting fields (for audit trail and tax reporting)
     taxCurrency?: string;           // The currency used for tax calculation (e.g., 'NOK')
@@ -61,7 +57,6 @@ export class Transaction {
         this.fee = fee;
         this.dateTime = dateTime;
         this.type = type;
-        this.baseSizeRemaining = baseSize;
         this.validator = validator;
         this.epoch = epoch;
         this.rewardSource = rewardSource;

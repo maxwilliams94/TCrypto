@@ -41,11 +41,8 @@ export class FileRepository implements TransactionStorage {
                     t.fee,
                     new Date(t.dateTime)
                 );
-                // Restore any additional properties
-                if (t.quoteSizeNative !== undefined) transaction.quoteSizeNative = t.quoteSizeNative;
-                if (t.nativeCurrency !== undefined) transaction.nativeCurrency = t.nativeCurrency;
-                if (t.baseSizeRemaining !== undefined) transaction.baseSizeRemaining = t.baseSizeRemaining;
-                if (t.soldOn !== undefined) transaction.soldOn = new Date(t.soldOn);
+                // Restore tax conversion fields
+                if (t.taxCurrency) transaction.taxCurrency = t.taxCurrency;
                 return transaction;
             });
 

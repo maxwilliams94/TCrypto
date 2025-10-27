@@ -233,8 +233,6 @@ async function fillMissingPrice(transaction: Transaction, nativeCurrency: string
             // Default to 0 if undefined
             transaction.price = typeof cryptoPrice === 'number' ? cryptoPrice : 0;
             transaction.quoteSize = transaction.baseSize * (typeof cryptoPrice === 'number' ? cryptoPrice : 0);
-            transaction.quoteSizeNative = transaction.quoteSize;
-            transaction.nativeCurrency = targetCurrency;
             console.log(`Price lookup successful: ${transaction.baseCurrency} = ${transaction.price} ${targetCurrency} on ${transaction.dateTime.toISOString().split('T')[0]} (${transaction.type})`);
         }
     } catch (error: any) {
