@@ -1,5 +1,6 @@
 import { Transaction } from "./transaction";
 import { SellEvent } from "./sellEvent";
+import { Portfolio } from "./portfolio";
 
 
 export class TaxReport {
@@ -19,6 +20,9 @@ export class TaxReport {
     sellEvents?: SellEvent[] = [];
     totalBuyFeesIncluded?: number = 0;  // Total buy fees included in sell events
     totalSellFees?: number = 0;         // Total sell fees
+    
+    // Portfolio tracking
+    portfolio?: Portfolio;
 
     constructor(startDate: Date, endDate: Date, baseCurrency: string, accountingMethod: string = 'FIFO') {
         this.startDate = startDate;
@@ -74,12 +78,15 @@ export class TaxReport {
             sellEvents: this.sellEvents?.map(se => se.toJSON()) || [],
             totalBuyFeesIncluded: this.totalBuyFeesIncluded,
             totalSellFees: this.totalSellFees,
+            portfolio: this.portfolio?.toJSON(),
             summary: {
                 totalProfit: this.profit,
                 totalFees: this.fees,
                 totalBuyFees: this.totalBuyFeesIncluded,
                 totalSellFees: this.totalSellFees,
-                numberOfSells: this.sellEvents?.length || 0
+                numberOfSells: this.sellEvents?.length || 0,
+                realizedGainLoss: this.portfolio?.getTotalRealizedGainLoss(),
+                unrealizedGainLoss: this.portfolio?.getTotalUnrealizedGainLoss()
             }
         };
     }

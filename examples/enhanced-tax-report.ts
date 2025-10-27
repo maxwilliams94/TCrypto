@@ -161,6 +161,35 @@ async function demonstrateEnhancedTaxReport() {
     
     console.log('\nTotal Profit: 78,400 + 23,900 = 102,300 NOK');
     console.log('Total Fees: (800 + 200 + 300 + 300) + (800 + 600) = 1,600 + 1,400 = 3,000 NOK');
+    
+    console.log('\n=== Portfolio Summary ===');
+    console.log(`Currency: ${taxReport.portfolio?.currency}`);
+    console.log(`Total Realized Gain/Loss: ${taxReport.portfolio?.getTotalRealizedGainLoss().toFixed(2)} NOK`);
+    console.log(`Number of Positions: ${taxReport.portfolio?.getAllPositions(false).length}`);
+    console.log();
+    
+    console.log('=== Asset Positions ===');
+    taxReport.portfolio?.getAllPositions(true).forEach(position => {
+        console.log(`\n${position.asset}:`);
+        console.log(`  Holdings:`);
+        console.log(`    Quantity: ${position.totalQuantity.toFixed(8)}`);
+        console.log(`    Average Cost Basis: ${position.averageCostBasis.toFixed(2)} NOK per unit`);
+        console.log(`    Total Cost Basis: ${position.totalCostBasis.toFixed(2)} NOK`);
+        
+        console.log(`  Period Activity:`);
+        console.log(`    Bought: ${position.quantityBought} ${position.asset}`);
+        console.log(`    Sold: ${position.quantitySold} ${position.asset}`);
+        console.log(`    Realized Gain/Loss: ${position.realizedGainLoss.toFixed(2)} NOK`);
+        console.log(`    Buy Fees: ${position.totalBuyFees.toFixed(2)} NOK`);
+        console.log(`    Sell Fees: ${position.totalSellFees.toFixed(2)} NOK`);
+        console.log(`    Total Fees: ${(position.totalBuyFees + position.totalSellFees).toFixed(2)} NOK`);
+        
+        if (position.isClosed()) {
+            console.log(`    Status: ✓ Position Closed`);
+        } else {
+            console.log(`    Status: ○ Position Open (${position.totalQuantity.toFixed(8)} ${position.asset} remaining)`);
+        }
+    });
 }
 
 // Run the example

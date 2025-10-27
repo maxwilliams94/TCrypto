@@ -2,6 +2,7 @@ import { TaxReport } from "../models/taxReport";
 import { Transaction } from "../models/transaction";
 import { CurrencyRateStorage } from "../repositories/currencyRateStorage";
 import { SellEvent, BuyAllocation } from "../models/sellEvent";
+import { Portfolio } from "../models/portfolio";
 
 /**
  * Represents a buy transaction and how much of it remains available for FIFO matching
@@ -42,6 +43,10 @@ export async function generateTaxReport(
     );
     taxReport.startDate = allTransactionsSorted[0].dateTime;
 
+    // Initialize portfolio tracking
+    const portfolio = new Portfolio(nativeCurrency);
+    taxReport.portfolio = portfolio;
+
     // Track buy positions for each asset (for FIFO matching)
     const buyPositions: Map<string, BuyPosition[]> = new Map();
     
@@ -76,6 +81,14 @@ export async function generateTaxReport(
             });
             
             console.debug(`Added buy position for ${t.baseCurrency}: ${t.baseSize} units at index ${i}`);
+            
+            // Update portfolio: add ALL buys (not just in-scope) to get correct current holdings
+            // But mark whether this buy is in the reporting period
+            // Skip native currency (fiat) - we only track crypto assets
+            if (t.baseCurrency !== nativeCurrency) {
+                const position = portfolio.getPosition(t.baseCurrency);
+                position.addBuy(t.baseSize, t.getTaxPrice(), t.getTaxFee(), isInScope);
+            }
             
         } else if (t.side === 'SELL') {
             if (isInScope) taxReport.sells!++;
@@ -149,12 +162,42 @@ export async function generateTaxReport(
             // Only add sell event to report if the sell is within the tax period
             if (isInScope) {
                 taxReport.addSellEvent(sellEvent);
+                
+                // Update portfolio: record the sell with ALL buys (not just in-scope)
+                // This ensures holdings are correct, but only in-scope activity is tracked
+                // Skip native currency (fiat) - we only track crypto assets
+                if (asset !== nativeCurrency) {
+                    const position = portfolio.getPosition(asset);
+                    position.addSell(
+                        sellEvent.totalQuantity,
+                        sellEvent.proceeds,
+                        sellEvent.totalCostBasis,
+                        sellEvent.sellFee,
+                        sellEvent.totalBuyFees,  // Buy fees that were realized in this sell
+                        isInScope
+                    );
+                }
+                
                 console.debug(
                     `Sell event summary: Asset: ${asset}, Quantity: ${sellEvent.totalQuantity}, ` +
                     `Proceeds: ${sellEvent.proceeds.toFixed(2)} ${nativeCurrency}, Cost Basis: ${sellEvent.totalCostBasis.toFixed(2)} ${nativeCurrency}, ` +
                     `Buy Fees: ${sellEvent.totalBuyFees.toFixed(2)} ${nativeCurrency}, Sell Fee: ${sellEvent.sellFee.toFixed(2)} ${nativeCurrency}, ` +
                     `Profit/Loss: ${sellEvent.profitLoss.toFixed(2)} ${nativeCurrency}`
                 );
+            } else {
+                // Sell is out of scope, but we still need to update holdings
+                // Skip native currency (fiat) - we only track crypto assets
+                if (asset !== nativeCurrency) {
+                    const position = portfolio.getPosition(asset);
+                    position.addSell(
+                        sellEvent.totalQuantity,
+                        sellEvent.proceeds,
+                        sellEvent.totalCostBasis,
+                        sellEvent.sellFee,
+                        sellEvent.totalBuyFees,
+                        false  // Not in period, don't track as period activity
+                    );
+                }
             }
         }
     }
