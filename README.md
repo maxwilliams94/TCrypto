@@ -87,6 +87,17 @@ COINGECKO_API_KEY=your_demo_api_key_here npm run dev
 - `GET /transactions/export/csv` — Export to CSV (file storage only)
 - `GET /tax?start=YYYY-MM-DD&end=YYYY-MM-DD` — Generate tax report for date range
 
+### Tax Report Features
+
+The tax report endpoint provides detailed information for tax filing:
+
+- **Proper fee handling**: Buy fees are included in cost basis, sell fees reduce profits
+- **FIFO cost basis**: Sells are matched against oldest buys first
+- **Detailed sell events**: Each sell includes complete audit trail of matched buys
+- **Comprehensive summary**: Total profit/loss, fees breakdown, number of transactions
+
+See [Tax Reporting Documentation](docs/TAX_REPORTING.md) for detailed examples and usage.
+
 ## CSV Import
 
 Place CSV files in a directory and set `TRANSACTION_DIR` env var. 

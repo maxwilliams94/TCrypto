@@ -1,6 +1,16 @@
 import { TaxReport } from "../models/taxReport";
 import { Transaction } from "../models/transaction";
 import { CurrencyRateStorage } from "../repositories/currencyRateStorage";
+import { SellEvent, BuyAllocation } from "../models/sellEvent";
+
+/**
+ * Represents a buy transaction and how much of it remains available for FIFO matching
+ */
+interface BuyPosition {
+    transaction: Transaction;
+    index: number;
+    remainingQuantity: number;
+}
 
 export async function generateTaxReport(
     transactions: Transaction[], 
@@ -32,10 +42,11 @@ export async function generateTaxReport(
     );
     taxReport.startDate = allTransactionsSorted[0].dateTime;
 
-    const buyPointers: Map<string, number> = new Map(); // Point at the index of the current transaction OR the current buy of a given asset
-    const remainingAsset: Map<string, number> = new Map(); // How much of an asset is left to sell for a given asset
-    remainingAsset.set(nativeCurrency, 999999999999);
-    buyPointers.set(nativeCurrency, -1); // Native currency does not have a buy pointer
+    // Track buy positions for each asset (for FIFO matching)
+    const buyPositions: Map<string, BuyPosition[]> = new Map();
+    
+    // Native currency has infinite supply at zero cost (we don't track fiat buys)
+    buyPositions.set(nativeCurrency, []);
 
     // Process ALL transactions for FIFO matching, but only count profit/fees for in-scope transactions
     for (let i: number = 0; i < allTransactionsSorted.length; i++) {
@@ -48,73 +59,109 @@ export async function generateTaxReport(
         if (isInScope) {
             taxReport.assets!.add(t.baseCurrency);
             taxReport.exchanges!.add(t.exchange);
-            taxReport.fees! += t.getTaxFee(); // Use tax-converted fee
+            // Note: fees are now tracked per sell event, not aggregated here
         }
         
         if (t.side === 'BUY') {
             if (isInScope) taxReport.buys!++;
-            if (!buyPointers.has(t.baseCurrency)) {
-                console.debug(`Adding new buy pointer for ${t.baseCurrency} at index ${i}`);
-                buyPointers.set(t.baseCurrency, i);
-                remainingAsset.set(t.baseCurrency, t.baseSize);
+            
+            // Add this buy to the position queue for FIFO matching
+            if (!buyPositions.has(t.baseCurrency)) {
+                buyPositions.set(t.baseCurrency, []);
             }
+            buyPositions.get(t.baseCurrency)!.push({
+                transaction: t,
+                index: i,
+                remainingQuantity: t.baseSize
+            });
+            
+            console.debug(`Added buy position for ${t.baseCurrency}: ${t.baseSize} units at index ${i}`);
+            
         } else if (t.side === 'SELL') {
             if (isInScope) taxReport.sells!++;
-            if (!buyPointers.has(t.baseCurrency)) throw new Error(`No buy found before a SELL of ${t.baseCurrency} at ${t.dateTime.toISOString()}`);
-            let toSell = t.baseSize;
-            let cumulativeCostBasis: number = 0;
-            do {
-                if (buyPointers.get(t.baseCurrency)! < 0) {
-                    console.debug(`No more buys for ${t.baseCurrency}. It appears transaction history is ${toSell} short.`);
-                    continue;
-                }
-                const sellAmount = Math.min(remainingAsset.get(t.baseCurrency)!, toSell);
-                const buyTransaction = allTransactionsSorted[buyPointers.get(t.baseCurrency)!];
-                console.debug(`Selling ${toSell} ${t.baseCurrency} into available ${remainingAsset.get(t.baseCurrency)} at index ${buyPointers.get(t.baseCurrency)!}`);
-                
-                // Use tax-converted price from the buy transaction (already in native currency)
-                const buyPriceInNative = buyTransaction.getTaxPrice();
-                
-                cumulativeCostBasis += buyPriceInNative * sellAmount;
-                remainingAsset.set(t.baseCurrency, remainingAsset.get(t.baseCurrency)! - sellAmount);
-                toSell -= sellAmount!;
-                console.debug(`${t.baseCurrency} still to sell: ${toSell}`);
-                if (toSell > 0) {
-                    let nextBuyIndex = nextBuy(allTransactionsSorted, buyPointers.get(t.baseCurrency)! + 1, t.baseCurrency);
-                    if (nextBuyIndex < 0) {
-                        console.warn(`No more buys for ${t.baseCurrency}. It appears transaction history is ${toSell} short.`);
-                        remainingAsset.set(t.baseCurrency, 0);
-                    } else {
-                        remainingAsset.set(t.baseCurrency, allTransactionsSorted[nextBuyIndex].baseSize);
-                    }
-                    buyPointers.set(t.baseCurrency, nextBuyIndex)
-                }
-
-            } while (toSell > 0 && buyPointers.get(t.baseCurrency)! >= 0);
             
-            // Only add profit if the SELL transaction is within the tax period
+            const asset = t.baseCurrency;
+            if (!buyPositions.has(asset) || buyPositions.get(asset)!.length === 0) {
+                console.warn(`No buy found before SELL of ${asset} at ${t.dateTime.toISOString()}. This may indicate incomplete transaction history.`);
+                continue;
+            }
+            
+            // Create a sell event to track this sell and its FIFO matching
+            const sellEvent = new SellEvent(
+                t.id,
+                t.dateTime,
+                asset,
+                t.exchange,
+                nativeCurrency,  // Currency for all monetary values
+                t.baseSize,
+                t.getTaxPrice(),
+                t.getTaxFee()
+            );
+            
+            // Match this sell against buy positions using FIFO
+            let remainingToSell = t.baseSize;
+            const positions = buyPositions.get(asset)!;
+            
+            while (remainingToSell > 0 && positions.length > 0) {
+                const buyPosition = positions[0];
+                const quantityToAllocate = Math.min(buyPosition.remainingQuantity, remainingToSell);
+                
+                // Calculate proportional fee for this allocation
+                // If we're using 50% of the buy, we include 50% of the buy fee in the cost basis
+                const proportionOfBuy = quantityToAllocate / buyPosition.transaction.baseSize;
+                const allocatedBuyFee = buyPosition.transaction.getTaxFee() * proportionOfBuy;
+                
+                // Cost basis = (price * quantity) + proportional buy fee
+                const costBasis = (buyPosition.transaction.getTaxPrice() * quantityToAllocate) + allocatedBuyFee;
+                
+                const allocation: BuyAllocation = {
+                    buyTransactionId: buyPosition.transaction.id,
+                    quantity: quantityToAllocate,
+                    costBasis: costBasis
+                };
+                
+                sellEvent.addBuyAllocation(allocation, allocatedBuyFee);
+                
+                console.debug(
+                    `FIFO match: Selling ${quantityToAllocate} ${asset} ` +
+                    `from buy ${buyPosition.transaction.id} at ${buyPosition.transaction.dateTime.toISOString()} ` +
+                    `(buy price: ${buyPosition.transaction.getTaxPrice()}, buy fee: ${allocatedBuyFee.toFixed(2)}, cost basis: ${costBasis.toFixed(2)})`
+                );
+                
+                // Update remaining quantities
+                buyPosition.remainingQuantity -= quantityToAllocate;
+                remainingToSell -= quantityToAllocate;
+                
+                // Remove buy position if fully consumed
+                if (buyPosition.remainingQuantity <= 0.00000001) { // Use small epsilon for floating point comparison
+                    positions.shift();
+                    console.debug(`Buy position fully consumed, removed from queue`);
+                }
+            }
+            
+            if (remainingToSell > 0.00000001) {
+                console.warn(
+                    `Sell event ${t.id} could not be fully matched. ` +
+                    `${remainingToSell} ${asset} remaining. Transaction history may be incomplete.`
+                );
+            }
+            
+            // Only add sell event to report if the sell is within the tax period
             if (isInScope) {
-                let costBasis: number = cumulativeCostBasis / t.baseSize;
-                // Use tax-converted price for the sell transaction
-                var profit: number = (t.getTaxPrice() - costBasis) * t.baseSize;
-                taxReport.profit! += profit;
-                console.debug(`Profit selling ${t.baseSize} ${t.baseCurrency} at ${t.getTaxPrice()} with cost basis of ${costBasis} is ${profit} ${nativeCurrency}`);
+                taxReport.addSellEvent(sellEvent);
+                console.debug(
+                    `Sell event summary: Asset: ${asset}, Quantity: ${sellEvent.totalQuantity}, ` +
+                    `Proceeds: ${sellEvent.proceeds.toFixed(2)} ${nativeCurrency}, Cost Basis: ${sellEvent.totalCostBasis.toFixed(2)} ${nativeCurrency}, ` +
+                    `Buy Fees: ${sellEvent.totalBuyFees.toFixed(2)} ${nativeCurrency}, Sell Fee: ${sellEvent.sellFee.toFixed(2)} ${nativeCurrency}, ` +
+                    `Profit/Loss: ${sellEvent.profitLoss.toFixed(2)} ${nativeCurrency}`
+                );
             }
         }
     }
+    
     return taxReport;
 }
 
 function inScope(date: Date, startDate: Date, endDate: Date): boolean {
     return date >= startDate && date <= endDate;
-}           
-
-function nextBuy(transactions: Transaction[], startIndex: number, baseCurrency: string): number {
-    for (let i = startIndex; i < transactions.length; i++) {
-        if (transactions[i].side === 'BUY' && transactions[i].baseCurrency === baseCurrency) {
-            console.log(`Next buy for ${baseCurrency} (${transactions[i].baseSize}) found at index ${i}`);
-            return i;
-        }
-    }
-    return -1; // No buy found
 }
