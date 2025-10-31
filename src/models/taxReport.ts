@@ -9,6 +9,7 @@ export class TaxReport {
     baseCurrency: string;
     accountingMethod: string = 'FIFO';
     transactions?: Transaction[];
+    accountingTransactions?: Transaction[];
     buys?: number = 0;
     sells?: number = 0;
     assets?: Set<string> = new Set();
@@ -69,6 +70,7 @@ export class TaxReport {
             baseCurrency: this.baseCurrency,
             accountingMethod: this.accountingMethod,
             transactions: this.transactions,
+            accountingTransactions: this.accountingTransactions,
             buys: this.buys,
             sells: this.sells,
             assets: Array.from(this.assets || []),

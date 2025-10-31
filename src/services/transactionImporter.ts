@@ -1,7 +1,7 @@
 type FillMissingPriceResult = { transaction: Transaction, apiCalled: boolean };
 import * as fs from 'fs';
 import csv from 'csv-parser';
-import { isCryptoCryptoTransaction, Transaction, TransactionType } from '../models/transaction';
+import { Transaction, TransactionType } from '../models/transaction';
 import { TransactionStorage } from '../repositories/storage';
 import { ExchangeRateService } from './exchangeRateService';
 import { FileRepository } from '../repositories/file';
@@ -94,12 +94,8 @@ export async function importInitialTransactions(storage: TransactionStorage, cur
                 // Fill in missing prices before processing (with rate limiting)
                 const transactionsWithPrices = await fillMissingPricesWithRateLimit(transactions, nativeCurrency, currencyRateStorage);
                 
-                const splitTransactions = await Promise.all(
-                    transactionsWithPrices.map(async (transaction: Transaction) => await splitCryptoCryptoTransaction(transaction, nativeCurrency, currencyRateStorage))
-                );
-                
                 // Only add transactions that don't already exist
-                splitTransactions.flat().forEach((transaction: Transaction) => {
+                transactionsWithPrices.forEach((transaction: Transaction) => {
                     if (!existingIds.has(transaction.id)) {
                         storage.add(transaction);
                         existingIds.add(transaction.id);
@@ -239,40 +235,6 @@ async function fillMissingPrice(transaction: Transaction, nativeCurrency: string
         console.warn(`Failed to fetch price for ${transaction.baseCurrency} on ${transaction.dateTime.toISOString().split('T')[0]} (${transaction.type}): ${error.message}`);
     }
     return { transaction, apiCalled };
-}
-
-async function splitCryptoCryptoTransaction(transaction: Transaction, nativeCurrency: string, currencyRateStorage: CurrencyRateStorage): Promise<Transaction[]> {
-    if (!isCryptoCryptoTransaction(transaction)) return [transaction];
-
-    //split the transaction into two transactions as we must consider the quote currency as being sold
-    const exchangeRateService = new ExchangeRateService(currencyRateStorage);
-    const exchangeRate: number = await exchangeRateService.getCcyNokRate(transaction.quoteCurrency, transaction.dateTime)
-    console.log("Exchange rate for", transaction.quoteCurrency, "on", transaction.dateTime, "is", exchangeRate);
-    const sellTransaction = new Transaction(
-        transaction.id + '-sell',
-        transaction.quoteCurrency,
-        nativeCurrency!,
-        transaction.exchange,
-        "SELL",
-        transaction.quoteSize,
-        transaction.quoteSize * exchangeRate,
-        exchangeRate,
-        0,
-        transaction.dateTime);
-    const buyTransaction = new Transaction(
-        transaction.id + '-buy',
-        transaction.baseCurrency,
-        nativeCurrency!,
-        transaction.exchange,
-        "BUY",
-        transaction.baseSize,
-        transaction.quoteSize * exchangeRate,
-        transaction.price * exchangeRate,
-        transaction.fee * exchangeRate,
-        transaction.dateTime
-    );
-    console.log("Split transaction into:", sellTransaction.toSimpleJSON(), buyTransaction.toSimpleJSON());
-    return [sellTransaction, buyTransaction];
 }
 
 function mapTransactionType(type: string): TransactionType {

@@ -161,7 +161,11 @@ async function main() {
     // Option 1: Export everything at once
     console.log('1. Complete Export (all files at once)');
     console.log('   This creates 4 CSV files with all tax report data:\n');
-    await exportTaxReportComplete(taxReport, exportDir, transactions);
+    await exportTaxReportComplete(
+        taxReport,
+        exportDir,
+        taxReport.accountingTransactions ?? transactions
+    );
     console.log(`   ✓ Exported to: ${exportDir}/\n`);
 
     // Option 2: Export individual components
@@ -170,14 +174,22 @@ async function main() {
     // 2a. Export sell events summary
     const sellEventsPath = path.join(exportDir, 'custom_sell_events.csv');
     if (taxReport.sellEvents && taxReport.sellEvents.length > 0) {
-        await exportSellEventsToCSV(taxReport.sellEvents, sellEventsPath, transactions);
+        await exportSellEventsToCSV(
+            taxReport.sellEvents,
+            sellEventsPath,
+            taxReport.accountingTransactions ?? transactions
+        );
         console.log(`   ✓ Sell Events: ${sellEventsPath}`);
     }
 
     // 2b. Export detailed FIFO allocations
     const allocationsPath = path.join(exportDir, 'custom_allocations.csv');
     if (taxReport.sellEvents && taxReport.sellEvents.length > 0) {
-        await exportSellEventAllocationsToCSV(taxReport.sellEvents, allocationsPath, transactions);
+        await exportSellEventAllocationsToCSV(
+            taxReport.sellEvents,
+            allocationsPath,
+            taxReport.accountingTransactions ?? transactions
+        );
         console.log(`   ✓ FIFO Allocations: ${allocationsPath}`);
     }
 

@@ -1,8 +1,9 @@
 import { TaxReport } from "../models/taxReport";
-import { Transaction } from "../models/transaction";
+import { Transaction, isCryptoCryptoTransaction } from "../models/transaction";
 import { CurrencyRateStorage } from "../repositories/currencyRateStorage";
 import { SellEvent, BuyAllocation } from "../models/sellEvent";
 import { Portfolio } from "../models/portfolio";
+import { ExchangeRateService } from "./exchangeRateService";
 
 /**
  * Represents a buy transaction and how much of it remains available for FIFO matching
@@ -23,25 +24,32 @@ export async function generateTaxReport(
 ): Promise<TaxReport> {
     const taxReport = new TaxReport(periodStart, periodEnd, nativeCurrency, accountingMethod);
 
-    // Verify that transactions have tax conversions populated
-    const missingConversions = transactions.filter(t => !t.hasTaxConversion());
-    if (missingConversions.length > 0) {
-        console.warn(
-            `Warning: ${missingConversions.length} transactions are missing tax conversions. ` +
-            `These should have been populated during import. Transaction IDs: ${missingConversions.slice(0, 5).map(t => t.id).join(', ')}` +
-            `${missingConversions.length > 5 ? '...' : ''}`
-        );
-    }
+    const exchangeRateService = new ExchangeRateService(currencyRateStorage);
 
-    // Sort ALL transactions chronologically for correct FIFO matching
-    // We need the full history to calculate cost basis correctly
-    const allTransactionsSorted = transactions.sort((a, b) => a.dateTime.getTime() - b.dateTime.getTime());
-    
-    // Store only the in-scope transactions for the report
-    taxReport.transactions = allTransactionsSorted.filter(transaction => 
+    // Sort transactions chronologically without mutating the original array reference
+    const transactionHistory = [...transactions].sort(
+        (a, b) => a.dateTime.getTime() - b.dateTime.getTime()
+    );
+
+    // Build accounting view with synthetic legs for crypto-crypto trades
+    const accountingTransactions = await expandTransactionsForAccounting(
+        transactionHistory,
+        nativeCurrency,
+        exchangeRateService
+    );
+
+    taxReport.accountingTransactions = accountingTransactions;
+
+    // Store only the in-scope original transactions for reporting
+    taxReport.transactions = transactionHistory.filter(transaction => 
         inScope(transaction.dateTime, periodStart, periodEnd)
     );
-    taxReport.startDate = allTransactionsSorted[0].dateTime;
+
+    // Always initialize startDate to periodStart; overwrite if transactions exist
+    taxReport.startDate = periodStart;
+    if (transactionHistory.length > 0) {
+        taxReport.startDate = transactionHistory[0].dateTime;
+    }
 
     // Initialize portfolio tracking
     const portfolio = new Portfolio(nativeCurrency);
@@ -54,8 +62,8 @@ export async function generateTaxReport(
     buyPositions.set(nativeCurrency, []);
 
     // Process ALL transactions for FIFO matching, but only count profit/fees for in-scope transactions
-    for (let i: number = 0; i < allTransactionsSorted.length; i++) {
-        let t = allTransactionsSorted[i];
+    for (let i: number = 0; i < accountingTransactions.length; i++) {
+        const t = accountingTransactions[i];
         const isInScope = inScope(t.dateTime, periodStart, periodEnd);
         
         console.debug(`${i} ${JSON.stringify(t.toSimpleJSON())} inscope: ${isInScope}`);
@@ -207,4 +215,127 @@ export async function generateTaxReport(
 
 function inScope(date: Date, startDate: Date, endDate: Date): boolean {
     return date >= startDate && date <= endDate;
+}
+
+async function expandTransactionsForAccounting(
+    transactions: Transaction[],
+    nativeCurrency: string,
+    exchangeRateService: ExchangeRateService
+): Promise<Transaction[]> {
+    const expanded: Transaction[] = [];
+    let sequence = 0;
+
+    for (const original of transactions) {
+        await ensureTaxConversion(original, nativeCurrency, exchangeRateService);
+
+        if (isCryptoCryptoTransaction(original)) {
+            const quoteToNative = original.taxConversionRate ?? 1;
+            const quoteValueNative = original.taxQuoteSize ?? (original.quoteSize * quoteToNative);
+            const basePriceNative = original.taxPrice ?? (original.price * quoteToNative);
+            const feeNative = original.getTaxFee();
+
+            const sellTx = new Transaction(
+                `${original.id}#quote-sell`,
+                original.quoteCurrency,
+                nativeCurrency,
+                original.exchange,
+                'SELL',
+                original.quoteSize,
+                quoteValueNative,
+                quoteToNative,
+                0,
+                original.dateTime,
+                original.type,
+                original.validator,
+                original.epoch,
+                original.rewardSource
+            );
+            sellTx.processingSequence = sequence++;
+            sellTx.sourceTransactionId = original.id;
+            sellTx.leg = 'QUOTE';
+            sellTx.setTaxConversion(nativeCurrency, 1, original.dateTime);
+
+            const buyTx = new Transaction(
+                `${original.id}#base-buy`,
+                original.baseCurrency,
+                nativeCurrency,
+                original.exchange,
+                'BUY',
+                original.baseSize,
+                quoteValueNative,
+                basePriceNative,
+                feeNative,
+                original.dateTime,
+                original.type,
+                original.validator,
+                original.epoch,
+                original.rewardSource
+            );
+            buyTx.processingSequence = sequence++;
+            buyTx.sourceTransactionId = original.id;
+            buyTx.leg = 'BASE';
+            buyTx.setTaxConversion(nativeCurrency, 1, original.dateTime);
+            buyTx.feeCurrency = nativeCurrency;
+
+            expanded.push(sellTx, buyTx);
+        } else {
+            original.processingSequence = sequence++;
+            original.leg = 'ORIGINAL';
+            expanded.push(original);
+        }
+    }
+
+    return expanded.sort((a, b) => {
+        const dateDiff = a.dateTime.getTime() - b.dateTime.getTime();
+        if (dateDiff !== 0) {
+            return dateDiff;
+        }
+        const seqA = a.processingSequence ?? 0;
+        const seqB = b.processingSequence ?? 0;
+        if (seqA !== seqB) {
+            return seqA - seqB;
+        }
+        return a.id.localeCompare(b.id);
+    });
+}
+
+async function ensureTaxConversion(
+    transaction: Transaction,
+    nativeCurrency: string,
+    exchangeRateService: ExchangeRateService
+): Promise<void> {
+    if (transaction.hasTaxConversion() && transaction.taxCurrency === nativeCurrency) {
+        return;
+    }
+
+    try {
+        let conversionRate = 1;
+
+        if (transaction.quoteCurrency === nativeCurrency) {
+            conversionRate = 1;
+        } else if (isFiatCurrency(nativeCurrency) && isFiatCurrency(transaction.quoteCurrency)) {
+            conversionRate = await exchangeRateService.getCcyNokRate(
+                transaction.quoteCurrency,
+                transaction.dateTime
+            );
+        } else {
+            conversionRate = await exchangeRateService.getCryptoPriceInCurrency(
+                transaction.quoteCurrency,
+                nativeCurrency,
+                transaction.dateTime
+            );
+        }
+
+        transaction.setTaxConversion(nativeCurrency, conversionRate, transaction.dateTime);
+    } catch (error) {
+        console.warn(
+            `Failed to ensure tax conversion for transaction ${transaction.id}: ${error}`
+        );
+        transaction.setTaxConversion(nativeCurrency, 1, transaction.dateTime);
+    }
+}
+
+function isFiatCurrency(currency: string): boolean {
+    const fiatCurrencies = ['USD', 'EUR', 'GBP', 'NOK', 'SEK', 'DKK', 'JPY', 'CNY', 'AUD', 'CAD'];
+    return fiatCurrencies.includes(currency.toUpperCase());
 }

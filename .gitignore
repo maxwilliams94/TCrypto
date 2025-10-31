@@ -12,7 +12,7 @@ lerna-debug.log*
 
 # Persistent data files
 /data/*.json
-/data/export.csv
+exports/
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json

@@ -28,6 +28,9 @@ export class Transaction {
     validator?: string;      // For staking rewards
     epoch?: number;          // For staking rewards
     rewardSource?: string;   // Source of the reward (e.g., 'cardano', 'polkadot')
+    sourceTransactionId?: string; // Link back to original trade when using derived legs
+    leg?: 'BASE' | 'QUOTE' | 'ORIGINAL';
+    processingSequence?: number;
     
 
     constructor(
@@ -74,7 +77,9 @@ export class Transaction {
             dateTime: this.dateTime.toISOString(),
             validator: this.validator,
             epoch: this.epoch,
-            rewardSource: this.rewardSource
+            rewardSource: this.rewardSource,
+            sourceTransactionId: this.sourceTransactionId,
+            leg: this.leg
         };
 
         // Add tax conversion fields if available

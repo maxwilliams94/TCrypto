@@ -71,6 +71,8 @@ This captures both:
 - Gain/loss from BTC price movement
 - Gain/loss from USD-NOK forex movement
 
+**Implementation detail (2025-10-31):** The importer now keeps BTC-USDC trades intact. During tax report generation the profit reporter expands each crypto-crypto trade into runtime NOK legs (USDC→NOK sell + BTC→NOK buy) using the stored exchange rates, so FIFO and FX gains are handled without polluting the persisted transaction list.
+
 ### 5. **Store Exchange Rates on Transactions** ⭐ NEW
 **Reason:** Enable accurate crypto-crypto tax calculations at report time.
 

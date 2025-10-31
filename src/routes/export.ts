@@ -74,7 +74,11 @@ exportRouter.get('/tax-report/complete', async (req, res): Promise<void> => {
 
         // Export to directory
         const outputDir = path.resolve(process.cwd(), 'exports/tax-reports');
-        await exportTaxReportComplete(taxReport, outputDir, transactions);
+        await exportTaxReportComplete(
+            taxReport,
+            outputDir,
+            taxReport.accountingTransactions ?? transactions
+        );
 
         res.json({
             success: true,
@@ -133,7 +137,11 @@ exportRouter.get('/tax-report/sell-events', async (req, res): Promise<void> => {
         }
 
         const outputPath = path.resolve(process.cwd(), `exports/sell_events_${start}_to_${end}.csv`);
-        await exportSellEventsToCSV(taxReport.sellEvents, outputPath, transactions);
+        await exportSellEventsToCSV(
+            taxReport.sellEvents,
+            outputPath,
+            taxReport.accountingTransactions ?? transactions
+        );
 
         res.download(outputPath, `sell_events_${start}_to_${end}.csv`);
     } catch (error: any) {
