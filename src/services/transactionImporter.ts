@@ -13,7 +13,7 @@ export async function loadTransactionData(filePath: string, nativeCurrency: stri
         fs.createReadStream(filePath)
         .pipe(csv())
         .on('headers', (headers) => {
-            for (let reqHeader of ['Id', 'Status', 'Side', 'Market', 'TransactionType', 'Fee', 'FilledQuantity', 'FilledQuote', 'FilledPrice', 'Filled At'])
+            for (let reqHeader of ['Id', 'Status', 'Side', 'Market', 'TransactionType', 'Fee', 'FilledQuantity', 'FilledQuote', 'FilledPrice', 'Timestamp'])
             if (!headers.includes(reqHeader)) {
                 reject(new Error(`${filePath} does not contain ${reqHeader}`));
             }
@@ -36,7 +36,7 @@ export async function loadTransactionData(filePath: string, nativeCurrency: stri
                 parseFloat(row.FilledQuote),
                 price,
                 parseFloat(row.Fee || '0'),
-                new Date(row['Filled At']),
+                new Date(row['Timestamp']),
                 transactionType,
                 row.Validator,
                 row.Epoch ? parseInt(row.Epoch) : undefined,
@@ -172,7 +172,7 @@ async function fillMissingPricesWithRateLimit(transactions: Transaction[], nativ
     await currencyRateStorage.flush?.();
     
     // Log summary statistics
-    console.log(`Price lookup summary: ${priceLookupsSuccessful}/${priceLookupsAttempted} successful, ${priceLookupsSkipped} skipped (already have price)`);
+    if (priceLookupsAttempted) console.log(`Price lookup summary: ${priceLookupsSuccessful}/${priceLookupsAttempted} successful, ${priceLookupsSkipped} skipped (already have price)`);
     
     return result;
 }

@@ -13,7 +13,6 @@ export class ExchangeRateService {
             console.log('CoinGecko API key found - using authenticated requests');
         } else {
             console.log('WARNING: No CoinGecko API key found. CoinGecko now requires API keys for all requests.');
-            console.log('Sign up for a free Demo account at https://www.coingecko.com/en/api/pricing');
             console.log('Set COINGECKO_API_KEY environment variable to enable crypto price fetching.');
         }
     }
@@ -25,8 +24,7 @@ export class ExchangeRateService {
     private async makeCoingeckoRequest(url: string): Promise<any> {
         if (!this.coinGeckoApiKey) {
             throw new Error(
-                'CoinGecko API key is required. Get a free Demo account at https://www.coingecko.com/en/api/pricing ' +
-                'and set the COINGECKO_API_KEY environment variable.'
+                'CoinGecko API key is required. Set the COINGECKO_API_KEY environment variable.'
             );
         }
 

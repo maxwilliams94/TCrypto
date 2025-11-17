@@ -40,7 +40,7 @@ TRANSACTION_DIR=assets USE_FILE_STORAGE=true npm run dev
 ```
 
 ## Codebase conventions and notable patterns
-- CSV parsing in `loadTransactionData()` expects headers exactly: `Id`, `Status`, `Market`, `FilledQuantity`, `FilledQuote`, `FilledPrice`, `Filled At`. If a header is missing the importer rejects the file.
+- CSV parsing in `loadTransactionData()` expects headers exactly: `Id`, `Status`, `Market`, `FilledQuantity`, `FilledQuote`, `FilledPrice`, `Timestamp`. If a header is missing the importer rejects the file.
 - Markets are parsed via `row.Market.split('-')` and trimmed; the file must use `BASE-QUOTE` format.
 - When a transaction is crypto/crypto (neither side is considered fiat by `isFiat()`), it's split into two transactions. The split uses `ExchangeRateService` to convert the quote to `NOK` (native currency by default).
 - The `TransactionStorage` interface is used everywhere; the app ships with two implementations:
@@ -66,7 +66,7 @@ TRANSACTION_DIR=assets USE_FILE_STORAGE=true npm run dev
 - `package.json` scripts:
   - `dev` uses `ts-node` (runtime TS) — faster for iterative debugging.
   - `build` uses `npx tsc` and `start` expects compiled `dist/index.js`.
-- Date handling: CSV `Filled At` is parsed with `new Date(...)`. Timezone differences may affect lookup of exchange rates.
+- Date handling: CSV `Timestamp` is parsed with `new Date(...)`. Timezone differences may affect lookup of exchange rates.
 - Exchange rate cache key uses the Date object stringification; expect cache misses if dates are mutated or not normalised to YYYY-MM-DD.
 - There are no unit tests in the repo. Adding unit tests should target `loadTransactionData`, `splitCryptoCryptoTransaction`, `ExchangeRateService` (mock HTTP) and `generateTaxReport` logic.
 

@@ -152,7 +152,7 @@ Place CSV files in a directory and set `TRANSACTION_DIR` env var.
 
 ### Required CSV Headers
 Basic transaction headers:
-`Id`, `Status`, `Market`, `FilledQuantity`, `FilledQuote`, `FilledPrice`, `Filled At`
+`Id`, `Status`, `Market`, `FilledQuantity`, `FilledQuote`, `FilledPrice`, `Timestamp`
 
 ### Optional CSV Headers (for staking rewards)
 Additional headers for reward transactions:
@@ -167,7 +167,7 @@ TRANSACTION_DIR=./assets npm run dev
 
 ### CSV Example for Staking Rewards
 ```csv
-Id,Status,Market,FilledQuantity,FilledQuote,FilledPrice,Filled At,Type,Validator,Epoch,RewardSource
+Id,Status,Market,FilledQuantity,FilledQuote,FilledPrice,Timestamp,Type,Validator,Epoch,RewardSource
 reward-1,filled,ADA-NOK,5.5,,0,2024-01-15T10:00:00Z,STAKING_REWARD,ADAVERSE,452,cardano
 reward-2,filled,ETH-NOK,0.1,,0,2024-01-16T12:00:00Z,STAKING_REWARD,lido-validator,825432,ethereum
 ```

@@ -4,7 +4,7 @@
 
 ### Required Headers (Current)
 ```
-Id, Status, Side, Market, TransactionType, Fee, FilledQuantity, FilledQuote, FilledPrice, Filled At
+Id, Status, Side, Market, TransactionType, Fee, FilledQuantity, FilledQuote, FilledPrice, Timestamp
 ```
 
 ### Optional Headers (Current)
@@ -110,7 +110,7 @@ FilledQuantity          # Base currency amount
 FilledQuote             # Quote currency amount
 FilledPrice             # Price per unit (0 = auto-lookup for rewards)
 Fee                     # Fee amount
-Filled At               # Transaction timestamp (ISO 8601)
+Timestamp               # Transaction timestamp (ISO 8601)
 ```
 
 ### Optional Fields (Current)
@@ -149,37 +149,37 @@ TRANSFER                # Transfer with fee (no gain/loss) [NEW]
 
 ### Example 1: Trade with Fee in Sold Asset
 ```csv
-Id,Status,Market,Exchange,Side,TransactionType,FilledQuantity,FilledQuote,FilledPrice,Fee,FeeCurrency,Filled At,Notes
+Id,Status,Market,Exchange,Side,TransactionType,FilledQuantity,FilledQuote,FilledPrice,Fee,FeeCurrency,Timestamp,Notes
 tx-001,FILLED,BTC-NOK,binance,SELL,TRADE,0.1,55000,550000,0.001,BTC,2024-01-15T10:00:00Z,Regular sale
 ```
 
 ### Example 2: Staking Reward
 ```csv
-Id,Status,Market,Exchange,Side,TransactionType,FilledQuantity,FilledQuote,FilledPrice,Fee,Filled At,Validator,Epoch,RewardSource,Notes
+Id,Status,Market,Exchange,Side,TransactionType,FilledQuantity,FilledQuote,FilledPrice,Fee,Timestamp,Validator,Epoch,RewardSource,Notes
 reward-123,FILLED,ADA-NOK,cardano,BUY,STAKING_REWARD,5.5,46.75,8.5,0,2024-01-15T00:00:00Z,ADAVERSE,452,cardano,Weekly staking reward
 ```
 
 ### Example 3: Transfer from Another Exchange
 ```csv
-Id,Status,Market,Side,TransactionType,FilledQuantity,FilledQuote,FilledPrice,Fee,Filled At,Notes
+Id,Status,Market,Side,TransactionType,FilledQuantity,FilledQuote,FilledPrice,Fee,Timestamp,Notes
 transfer-001,FILLED,BTC-NOK,BUY,TRANSFER_IN,0.5,200000,400000,0,2024-06-01T10:00:00Z,Transferred from Kraken
 ```
 
 ### Example 4: Withdrawal to Hardware Wallet
 ```csv
-Id,Status,Market,Side,TransactionType,FilledQuantity,FilledQuote,FilledPrice,Fee,FeeCurrency,Filled At,Notes
+Id,Status,Market,Side,TransactionType,FilledQuantity,FilledQuote,FilledPrice,Fee,FeeCurrency,Timestamp,Notes
 withdraw-001,FILLED,BTC-NOK,,WITHDRAWAL,0.5,0,0,0.0001,BTC,2024-07-01T10:00:00Z,Sent to Ledger
 ```
 
 ### Example 5: Transfer Between Own Wallets
 ```csv
-Id,Status,Market,Side,TransactionType,FilledQuantity,FilledQuote,FilledPrice,Fee,FeeCurrency,Filled At,Notes
+Id,Status,Market,Side,TransactionType,FilledQuantity,FilledQuote,FilledPrice,Fee,FeeCurrency,Timestamp,Notes
 move-001,FILLED,ETH-NOK,,TRANSFER,2.0,0,0,0.002,ETH,2024-08-01T10:00:00Z,Moved to MetaMask
 ```
 
 ### Example 6: Crypto-Crypto Trade (BTC-USDC)
 ```csv
-Id,Status,Market,Exchange,Side,TransactionType,FilledQuantity,FilledQuote,FilledPrice,Fee,FeeCurrency,Filled At,BaseCurrencyRate,QuoteCurrencyRate,Notes
+Id,Status,Market,Exchange,Side,TransactionType,FilledQuantity,FilledQuote,FilledPrice,Fee,FeeCurrency,Timestamp,BaseCurrencyRate,QuoteCurrencyRate,Notes
 buy-btc-usdc,FILLED,BTC-USDC,coinbase,BUY,TRADE,0.1,6500,65000,3.25,USDC,2024-01-15T10:00:00Z,650000,10.00,Bought BTC with USDC
 sell-btc-usdc,FILLED,BTC-USDC,coinbase,SELL,TRADE,0.1,7200,72000,3.60,USDC,2024-06-15T10:00:00Z,756000,10.50,Sold BTC for USDC
 ```
