@@ -9,6 +9,7 @@ import { CurrencyRateStorage } from '../repositories/currencyRateStorage';
 
 export async function loadTransactionData(filePath: string, nativeCurrency: string): Promise<Array<Transaction>>{
     const data: Transaction[] = [];
+    console.log(`Loading transactions from file: ${filePath}`);
     return new Promise((resolve, reject) => {
         fs.createReadStream(filePath)
         .pipe(csv())
@@ -19,24 +20,30 @@ export async function loadTransactionData(filePath: string, nativeCurrency: stri
             }
         })
         .on('data', (row) => {
-            if (row.Status !== 'FILLED') return;
+            if (row.Status !== 'COMPLETED') return;
+            if (row.TransactionType === 'DEPOSIT' || row.TransactionType === 'WITHDRAWAL') return;
             const transactionType = mapTransactionType(row.TransactionType);
             const price = parseFloat(row.FilledPrice) || 0;
             if (!row.Side && transactionType === 'STAKING_REWARD') {
                 row.Side = 'BUY';
             }
-            
+            let market_parts = row.Market.split('-');
+            if (market_parts.length !== 2) {
+                if (row.TransactionType === 'AIRDROP' || row.TransactionType === 'STAKING_REWARD') {
+                    market_parts = [market_parts[0], nativeCurrency];
+                }
+            }
             const transaction = new Transaction(
                 row.Id,
-                row.Market.split('-')[0].trim(),
-                row.Market.split('-')[1].trim(),
+                market_parts[0].trim(),
+                market_parts[1].trim(),
                 row.Exchange || 'unknown',
                 row.Side,
                 parseFloat(row.FilledQuantity),
                 parseFloat(row.FilledQuote),
                 price,
                 parseFloat(row.Fee || '0'),
-                new Date(row['Timestamp']),
+                new Date(row.Timestamp),
                 transactionType,
                 row.Validator,
                 row.Epoch ? parseInt(row.Epoch) : undefined,
@@ -86,8 +93,11 @@ export async function importInitialTransactions(storage: TransactionStorage, cur
         });
 
         let newTransactionCount = 0;
+        let oldTransactionCount = 0;
         for (const file of files) {
             const filePath = path.join(transactionDir, file);
+            let newFileTransactionCount = 0;
+            let oldFileTransactionCount = 0;
             try {
                 const transactions: Array<Transaction> = await loadTransactionData(filePath, 'NOK');
                 
@@ -100,9 +110,11 @@ export async function importInitialTransactions(storage: TransactionStorage, cur
                         storage.add(transaction);
                         existingIds.add(transaction.id);
                         newTransactionCount++;
+                    } else {
+                        oldTransactionCount++;
                     }
                 });
-                console.log(`Successfully imported transactions from ${filePath}`);
+                console.log(`Successfully imported ${newFileTransactionCount} new (${oldFileTransactionCount} existing) transactions and skipped ${oldFileTransactionCount} existing transactions from ${filePath}`);
             } catch (error: any) {
                 console.error(`Error importing transactions from ${filePath}: ${error.message}`);
             }

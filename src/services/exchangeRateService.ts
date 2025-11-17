@@ -285,6 +285,9 @@ export class ExchangeRateService {
     }
 
     private async fetchCryptoHistoricalPrice(cryptoSymbol: string, quoteCurrency: string, date: Date): Promise<number> {
+        if (!cryptoSymbol) {
+            throw new Error('Crypto symbol is required to fetch price.');
+        }
         const coinId = this.mapSymbolToCoinGeckoId(cryptoSymbol);
         const dateStr = formatDateToDDMMYYYY(date); // CoinGecko expects DD-MM-YYYY format
         
@@ -325,6 +328,9 @@ export class ExchangeRateService {
      * @returns Object mapping currency to price.
      */
     private async fetchCryptoHistoricalPriceMulti(cryptoSymbol: string, quoteCurrencies: string[], date: Date): Promise<Record<string, number>> {
+        if (!cryptoSymbol) {
+            throw new Error('Crypto symbol is required to fetch price.');
+        }
         const coinId = this.mapSymbolToCoinGeckoId(cryptoSymbol);
         const dateStr = formatDateToDDMMYYYY(date); // CoinGecko expects DD-MM-YYYY format
         
