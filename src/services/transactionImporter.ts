@@ -32,6 +32,10 @@ export async function loadTransactionData(filePath: string, nativeCurrency: stri
                 if (row.TransactionType === 'AIRDROP' || row.TransactionType === 'STAKING_REWARD') {
                     market_parts = [market_parts[0], nativeCurrency];
                 }
+                else {
+                    console.debug(`Skipping transaction ${row.Id} of type ${row.TransactionType} with invalid market format: ${row.Market}`);
+                    return;
+                }
             }
             const transaction = new Transaction(
                 row.Id,

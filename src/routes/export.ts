@@ -194,4 +194,50 @@ exportRouter.get('/tax-report/portfolio', async (req, res): Promise<void> => {
     }
 });
 
+/**
+ * GET /export/portfolio/csv?date=YYYY-MM-DD&currency=NOK
+ * Export portfolio snapshot as of a specific date to CSV
+ */
+exportRouter.get('/portfolio/csv', async (req, res): Promise<void> => {
+    try {
+        const { date, currency = 'NOK' } = req.query;
+        const asOfDate = date ? new Date(date as string) : new Date();
+
+        if (isNaN(asOfDate.getTime())) {
+            res.status(400).json({ 
+                error: 'Invalid date format. Use YYYY-MM-DD' 
+            });
+            return;
+        }
+
+        const transactions = await transactionRepository.getAll();
+        const currencyRateRepo = new CurrencyRateMemoryRepository();
+        
+        // Generate portfolio snapshot using tax report (from beginning to asOfDate)
+        const taxReport = await generateTaxReport(
+            transactions,
+            currency as string,
+            new Date(0),
+            asOfDate,
+            'FIFO',
+            currencyRateRepo
+        );
+
+        if (!taxReport.portfolio) {
+            res.status(404).json({ 
+                error: 'No portfolio data found' 
+            });
+            return;
+        }
+
+        const dateStr = asOfDate.toISOString().split('T')[0];
+        const outputPath = path.resolve(process.cwd(), `exports/portfolio_snapshot_${dateStr}.csv`);
+        await exportPortfolioToCSV(taxReport, outputPath);
+
+        res.download(outputPath, `portfolio_snapshot_${dateStr}.csv`);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 export default exportRouter;

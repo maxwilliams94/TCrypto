@@ -389,11 +389,13 @@ export class ExchangeRateService {
      */
     private mapSymbolToCoinGeckoId(symbol: string): string {
         const symbolMap: { [key: string]: string } = {
+            'APT': 'aptos',
             'BTC': 'bitcoin',
             'ETH': 'ethereum',
             'ADA': 'cardano',
             'DOT': 'polkadot',
             'SOL': 'solana',
+            'LTC': 'litecoin',
             'AVAX': 'avalanche-2',
             'MATIC': 'matic-network',
             'ATOM': 'cosmos',
@@ -410,6 +412,7 @@ export class ExchangeRateService {
             'LUNA': 'terra-luna-2',
             'UST': 'terrausd',
             'USDC': 'usd-coin',
+            'USDG': 'usd-coin', // Treat USDG as USDC for price lookup
             'USDT': 'tether',
             'DAI': 'dai',
             'LINK': 'chainlink',
@@ -423,7 +426,8 @@ export class ExchangeRateService {
             'SUSHI': 'sushi',
             'BAL': 'balancer',
             'RUNE': 'thorchain',
-            'CAKE': 'pancakeswap-token'
+            'CAKE': 'pancakeswap-token',
+            'XRP': 'ripple',
         };
 
         const upperSymbol = symbol.toUpperCase();

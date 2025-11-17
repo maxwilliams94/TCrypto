@@ -10,6 +10,7 @@ import { CurrencyRateStorage } from './repositories/currencyRateStorage';
 import { importInitialTransactions } from './services/transactionImporter';
 import { transactionsRouter } from './routes/transactions';
 import { taxRouter } from './routes/tax';
+import { portfolioRouter } from './routes/portfolio';
 import { currencyRatesRouter } from './routes/currencyRates';
 import exportRouter from './routes/export';
 
@@ -70,6 +71,7 @@ app.get('/', (req: Request, res: Response) => {
 
 app.use('/transactions', transactionsRouter);
 app.use('/tax', taxRouter);
+app.use('/portfolio', portfolioRouter);
 app.use('/currency-rates', currencyRatesRouter);
 app.use('/export', exportRouter);
 

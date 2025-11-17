@@ -89,23 +89,39 @@ COINGECKO_API_KEY=your_demo_api_key_here npm run dev
 
 ### Export Endpoints
 
-Export tax reports and portfolio data to CSV for easy analysis:
+Export transactions, tax reports, and portfolio data to CSV for easy analysis:
 
-- `GET /export/transactions/csv` — Export all transactions (requires USE_FILE_STORAGE=true)
+#### Transaction Exports
+- `GET /export/transactions/csv` — Export all transactions to CSV (requires USE_FILE_STORAGE=true)
+
+#### Tax Report Exports
 - `GET /export/tax-report/complete?start=YYYY-MM-DD&end=YYYY-MM-DD&currency=NOK` — Export complete tax report (4 CSV files)
 - `GET /export/tax-report/sell-events?start=YYYY-MM-DD&end=YYYY-MM-DD` — Export sell events summary
-- `GET /export/tax-report/portfolio?start=YYYY-MM-DD&end=YYYY-MM-DD` — Export portfolio positions
+- `GET /export/tax-report/portfolio?start=YYYY-MM-DD&end=YYYY-MM-DD` — Export portfolio for tax period
 
-Example:
+#### Portfolio Snapshot Exports
+- `GET /export/portfolio/csv?date=YYYY-MM-DD&currency=NOK` — Export portfolio snapshot as of specific date
+- `GET /portfolio?date=YYYY-MM-DD` — Get portfolio snapshot (JSON response)
+
+**Examples:**
 ```bash
+# Export all transactions
+curl "http://localhost:3000/export/transactions/csv" --output transactions.csv
+
 # Export complete 2024 tax report to CSV files
 curl "http://localhost:3000/export/tax-report/complete?start=2024-01-01&end=2024-12-31"
 
 # Export just sell events for Q1 2024
 curl "http://localhost:3000/export/tax-report/sell-events?start=2024-01-01&end=2024-03-31" --output sell_events_q1.csv
 
-# Export portfolio as of year-end
-curl "http://localhost:3000/export/tax-report/portfolio?start=2024-01-01&end=2024-12-31" --output portfolio_2024.csv
+# Export portfolio as of year-end (CSV)
+curl "http://localhost:3000/export/portfolio/csv?date=2024-12-31" --output portfolio_2024.csv
+
+# Get current portfolio snapshot (JSON)
+curl "http://localhost:3000/portfolio"
+
+# Get portfolio as of specific date (JSON)
+curl "http://localhost:3000/portfolio?date=2024-12-31"
 ```
 
 #### CSV Export Files
