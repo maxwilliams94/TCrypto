@@ -45,9 +45,6 @@ export class Transaction {
         fee: number,
         dateTime: Date,
         type: TransactionType = 'TRADE',
-        validator?: string,
-        epoch?: number,
-        rewardSource?: string
     ) {
         this.id = id;
         this.baseCurrency = baseCurrency;
@@ -60,9 +57,6 @@ export class Transaction {
         this.fee = fee;
         this.dateTime = dateTime;
         this.type = type;
-        this.validator = validator;
-        this.epoch = epoch;
-        this.rewardSource = rewardSource;
     }
 
     toSimpleJSON() {
@@ -75,9 +69,6 @@ export class Transaction {
             price: this.price,
             fee: this.fee,
             dateTime: this.dateTime.toISOString(),
-            validator: this.validator,
-            epoch: this.epoch,
-            rewardSource: this.rewardSource,
             sourceTransactionId: this.sourceTransactionId,
             leg: this.leg
         };

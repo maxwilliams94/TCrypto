@@ -93,14 +93,15 @@ export class FileRepository implements TransactionStorage {
 
     async getAll(): Promise<Transaction[]> {
         await this.ensureLoaded();
-        return this.transactions;
+        return this.transactions.sort((a, b) => a.dateTime.getTime() - b.dateTime.getTime());
     }
 
     async getByDate(startDate: Date, endDate: Date): Promise<Transaction[]> {
         await this.ensureLoaded();
         return this.transactions.filter(transaction => 
             transaction.dateTime >= startDate && transaction.dateTime <= endDate
-        );
+        )
+        .sort((a, b) => a.dateTime.getTime() - b.dateTime.getTime());
     }
 
     async getById(id: string): Promise<Transaction | null> {
@@ -136,7 +137,7 @@ export class FileRepository implements TransactionStorage {
         await this.ensureLoaded();
         
         const headers = ['Id', 'Status', 'Market', 'Exchange', 'Side', 'FilledQuantity', 'FilledQuote', 'FilledPrice', 'Fee', 'Filled At'];
-        const rows = this.transactions.map(t => [
+        const rows = this.transactions.sort((a, b) => a.dateTime.getTime() - b.dateTime.getTime()).map(t => [
             t.id || '',
             'FILLED', // Assuming all stored transactions are filled
             `${t.baseCurrency}-${t.quoteCurrency}`,

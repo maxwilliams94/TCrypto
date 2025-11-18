@@ -247,7 +247,6 @@ export class ExchangeRateService {
             try {
                 // Fetch both target currency and USD for future flexibility
                 const prices = await this.fetchCryptoHistoricalPriceMulti(symbol, [normalizedQuote, 'usd'], date);
-                
                 // Store all fetched prices
                 for (const [currency, price] of Object.entries(prices)) {
                     const currencyRate = new CurrencyRate(
@@ -259,18 +258,16 @@ export class ExchangeRateService {
                     );
                     await this.rateStorage.add(currencyRate);
                 }
-                
                 // Add the requested currency to results
                 if (prices[normalizedQuote]) {
                     results.set(symbol.toUpperCase(), prices[normalizedQuote]);
                 }
-                
-                // Small delay to respect rate limits (CoinGecko free tier: 10-30 calls/minute)
-                // Only wait if we actually made an API call (i.e., there are uncached symbols)
-                await new Promise(resolve => setTimeout(resolve, 2000));
             } catch (error) {
                 console.warn(`Failed to fetch price for ${symbol}: ${error}`);
                 // Continue with other symbols
+            } finally {
+                // Always wait after every API call, success or failure
+                await new Promise(resolve => setTimeout(resolve, 2000));
             }
         }
 
@@ -363,23 +360,6 @@ export class ExchangeRateService {
             return result;
         } catch (error) {
             console.error(`Error fetching crypto prices for ${cryptoSymbol}:`, error);
-            
-            // If historical data fails, try a fallback approach for recent dates
-            if (this.isRecentDate(date)) {
-                console.log(`Attempting current price fallback for recent date: ${cryptoSymbol}`);
-                const result: Record<string, number> = {};
-                for (const currency of quoteCurrencies) {
-                    try {
-                        result[currency.toLowerCase()] = await this.getCurrentCryptoPrice(cryptoSymbol, currency);
-                    } catch (fallbackError) {
-                        console.warn(`Fallback failed for ${cryptoSymbol} in ${currency}: ${fallbackError}`);
-                    }
-                }
-                if (Object.keys(result).length > 0) {
-                    return result;
-                }
-            }
-            
             throw new Error(`Failed to fetch crypto prices for ${cryptoSymbol} in requested currencies.`);
         }
     }
@@ -413,7 +393,7 @@ export class ExchangeRateService {
             'LUNA': 'terra-luna-2',
             'UST': 'terrausd',
             'USDC': 'usd-coin',
-            'USDG': 'usd-coin', // Treat USDG as USDC for price lookup
+            'USDG': 'global-dollar',
             'USDT': 'tether',
             'DAI': 'dai',
             'LINK': 'chainlink',
@@ -429,6 +409,13 @@ export class ExchangeRateService {
             'RUNE': 'thorchain',
             'CAKE': 'pancakeswap-token',
             'XRP': 'ripple',
+            'XLM': 'stellar',
+            'LRC': 'loopring',
+            'CLV': 'clover-finance',
+            'AMP': 'amp-token',
+            'GRT': 'the-graph',
+            'FET': 'fetch-ai',
+            
         };
 
         const upperSymbol = symbol.toUpperCase();

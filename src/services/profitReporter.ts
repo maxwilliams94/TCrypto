@@ -247,9 +247,6 @@ async function expandTransactionsForAccounting(
                 0,
                 original.dateTime,
                 original.type,
-                original.validator,
-                original.epoch,
-                original.rewardSource
             );
             sellTx.processingSequence = sequence++;
             sellTx.sourceTransactionId = original.id;
@@ -268,9 +265,6 @@ async function expandTransactionsForAccounting(
                 feeNative,
                 original.dateTime,
                 original.type,
-                original.validator,
-                original.epoch,
-                original.rewardSource
             );
             buyTx.processingSequence = sequence++;
             buyTx.sourceTransactionId = original.id;

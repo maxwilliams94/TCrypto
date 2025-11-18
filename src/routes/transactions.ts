@@ -81,10 +81,7 @@ transactionsRouter.post('/', async (req: Request, res: Response) => {
             parseFloat(price),
             parseFloat(fee),
             new Date(dateTime),
-            type as TransactionType,
-            validator,
-            epoch ? parseInt(epoch) : undefined,
-            rewardSource
+            type as TransactionType
         );
 
         await transactionRepository.add(transaction);

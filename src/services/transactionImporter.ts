@@ -49,10 +49,7 @@ export async function loadTransactionData(filePath: string, nativeCurrency: stri
                 price,
                 parseFloat(row.Fee || '0'),
                 new Date(row.Timestamp),
-                transactionType,
-                row.Validator,
-                row.Epoch ? parseInt(row.Epoch) : undefined,
-                row.RewardSource
+                transactionType
             )
             data.push(transaction);
         })
