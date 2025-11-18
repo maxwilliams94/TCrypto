@@ -14,7 +14,7 @@ export async function loadTransactionData(filePath: string, nativeCurrency: stri
         fs.createReadStream(filePath)
         .pipe(csv())
         .on('headers', (headers) => {
-            for (let reqHeader of ['Id', 'Status', 'Side', 'Market', 'TransactionType', 'Fee', 'FilledQuantity', 'FilledQuote', 'FilledPrice', 'Timestamp'])
+            for (let reqHeader of ['Id', 'ExchangeId', 'Status', 'Side', 'Market', 'TransactionType', 'Fee', 'FilledQuantity', 'FilledQuote', 'FilledPrice', 'Timestamp'])
             if (!headers.includes(reqHeader)) {
                 reject(new Error(`${filePath} does not contain ${reqHeader}`));
             }
@@ -38,7 +38,7 @@ export async function loadTransactionData(filePath: string, nativeCurrency: stri
                 }
             }
             const transaction = new Transaction(
-                row.Id,
+                row.ExchangeId || row.Id,
                 market_parts[0].trim(),
                 market_parts[1].trim(),
                 row.Exchange || 'unknown',
@@ -172,7 +172,7 @@ async function fillMissingPricesWithRateLimit(transactions: Transaction[], nativ
             // Only wait if we actually called the API
             if (apiCalled) {
                 if (priceLookupsAttempted > 0 && priceLookupsAttempted % 5 === 0) {
-                    console.log(`Flushing currency rates to disk (processed ${priceLookupsAttempted} lookups)...`);
+                    console.debug(`Flushing currency rates to disk (processed ${priceLookupsAttempted} lookups)...`);
                     await currencyRateStorage.flush?.();
                 }
                 await new Promise(resolve => setTimeout(resolve, 2500));
@@ -186,7 +186,7 @@ async function fillMissingPricesWithRateLimit(transactions: Transaction[], nativ
     }
     
     // Final flush to ensure all fetched prices are saved
-    console.log('Final flush of currency rates...');
+    console.debug('Final flush of currency rates...');
     await currencyRateStorage.flush?.();
     
     // Log summary statistics
@@ -247,7 +247,7 @@ async function fillMissingPrice(transaction: Transaction, nativeCurrency: string
             // Default to 0 if undefined
             transaction.price = typeof cryptoPrice === 'number' ? cryptoPrice : 0;
             transaction.quoteSize = transaction.baseSize * (typeof cryptoPrice === 'number' ? cryptoPrice : 0);
-            console.log(`Price lookup successful: ${transaction.baseCurrency} = ${transaction.price} ${targetCurrency} on ${transaction.dateTime.toISOString().split('T')[0]} (${transaction.type})`);
+            console.debug(`Price lookup successful: ${transaction.baseCurrency} = ${transaction.price} ${targetCurrency} on ${transaction.dateTime.toISOString().split('T')[0]} (${transaction.type})`);
         }
     } catch (error: any) {
         console.warn(`Failed to fetch price for ${transaction.baseCurrency} on ${transaction.dateTime.toISOString().split('T')[0]} (${transaction.type}): ${error.message}`);
