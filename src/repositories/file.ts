@@ -136,16 +136,16 @@ export class FileRepository implements TransactionStorage {
         
         const headers = ['Id', 'Status', 'Market', 'Exchange', 'Side', 'FilledQuantity', 'FilledQuote', 'FilledPrice', 'Fee', 'Filled At'];
         const rows = this.transactions.map(t => [
-            t.id,
+            t.id || '',
             'FILLED', // Assuming all stored transactions are filled
             `${t.baseCurrency}-${t.quoteCurrency}`,
-            t.exchange,
-            t.side,
-            t.baseSize.toString(),
-            t.quoteSize.toString(),
-            t.price.toString(),
-            t.fee.toString(),
-            t.dateTime.toISOString()
+            t.exchange || '',
+            t.side || '',
+            (t.baseSize ?? 0).toString(),
+            (t.quoteSize ?? 0).toString(),
+            (t.price ?? 0).toString(),
+            (t.fee ?? 0).toString(),
+            t.dateTime ? t.dateTime.toISOString() : ''
         ]);
 
         const csv = [headers, ...rows]

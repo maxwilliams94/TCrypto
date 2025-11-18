@@ -114,8 +114,10 @@ export async function importInitialTransactions(storage: TransactionStorage, cur
                         storage.add(transaction);
                         existingIds.add(transaction.id);
                         newTransactionCount++;
+                        newFileTransactionCount++;
                     } else {
                         oldTransactionCount++;
+                        oldFileTransactionCount++;
                     }
                 });
                 console.log(`Successfully imported ${newFileTransactionCount} new (${oldFileTransactionCount} existing) transactions and skipped ${oldFileTransactionCount} existing transactions from ${filePath}`);
