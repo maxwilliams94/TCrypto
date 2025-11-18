@@ -1,3 +1,4 @@
+import logger from '../logger';
 import axios from 'axios';
 import { CurrencyRate } from '../models/currencyRate';
 import { CurrencyRateStorage } from '../repositories/currencyRateStorage';
@@ -10,10 +11,10 @@ export class ExchangeRateService {
     constructor(private rateStorage: CurrencyRateStorage) {
         this.coinGeckoApiKey = process.env.COINGECKO_API_KEY;
         if (this.coinGeckoApiKey) {
-            console.log('CoinGecko API key found - using authenticated requests');
+            logger.debug('CoinGecko API key found - using authenticated requests');
         } else {
-            console.log('WARNING: No CoinGecko API key found. CoinGecko now requires API keys for all requests.');
-            console.log('Set COINGECKO_API_KEY environment variable to enable crypto price fetching.');
+            logger.warn('WARNING: No CoinGecko API key found. CoinGecko now requires API keys for all requests.');
+            logger.info('Set COINGECKO_API_KEY environment variable to enable crypto price fetching.');
         }
     }
 
@@ -39,13 +40,13 @@ export class ExchangeRateService {
             return response;
         } catch (error) {
             if (axios.isAxiosError(error)) {
-                console.error(`CoinGecko API error: ${error.response?.status} - ${error.response?.statusText}`);
-                console.error('URL:', url);
+                logger.error(`CoinGecko API error: ${error.response?.status} - ${error.response?.statusText}`);
+                logger.error(`URL: ${url}`);
                 if (error.response?.status === 401) {
-                    console.error('Authentication failed - check your CoinGecko API key');
-                    console.error('Get a free API key at: https://www.coingecko.com/en/api/pricing');
+                    logger.error('Authentication failed - check your CoinGecko API key');
+                    logger.error('Get a free API key at: https://www.coingecko.com/en/api/pricing');
                 } else if (error.response?.status === 429) {
-                    console.error('Rate limit exceeded - Demo plan allows 30 calls/minute, 10k calls/month');
+                    logger.error('Rate limit exceeded - Demo plan allows 30 calls/minute, 10k calls/month');
                 }
             }
             throw error;
@@ -120,20 +121,20 @@ export class ExchangeRateService {
 
                 if (observations && observations['0'] && observations['0'][0]) {
                     if (attempt > 0) {
-                        console.log(`Found exchange rate for ${currency} on ${formatDateToYYYYMMDD(currentDate)} (requested: ${formatDateToYYYYMMDD(date)})`);
+                        logger.debug(`Found exchange rate for ${currency} on ${formatDateToYYYYMMDD(currentDate)} (requested: ${formatDateToYYYYMMDD(date)})`);
                     }
                     return parseFloat(observations['0'][0]);
                 }
                 // No data in response - try previous day
-                console.warn(`No data from Norges Bank for ${currency} on ${formatDateToYYYYMMDD(currentDate)}, trying previous day...`);
+                logger.warn(`No data from Norges Bank for ${currency} on ${formatDateToYYYYMMDD(currentDate)}, trying previous day...`);
             } catch (error) {
                 if (axios.isAxiosError(error)) {
                     // 404 means no data for this date (non-working day)
                     if (error.response?.status === 404) {
-                        console.warn(`No data from Norges Bank for ${currency} on ${formatDateToYYYYMMDD(currentDate)} (404), trying previous day...`);
+                        logger.warn(`No data from Norges Bank for ${currency} on ${formatDateToYYYYMMDD(currentDate)} (404), trying previous day...`);
                     } else {
                         // Other HTTP errors might be more serious, but still try previous day
-                        console.warn(`HTTP ${error.response?.status} from Norges Bank for ${currency} on ${formatDateToYYYYMMDD(currentDate)}, trying previous day...`);
+                        logger.warn(`HTTP ${error.response?.status} from Norges Bank for ${currency} on ${formatDateToYYYYMMDD(currentDate)}, trying previous day...`);
                     }
                 } else {
                     // Non-axios error - something more serious, don't retry

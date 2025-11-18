@@ -1,3 +1,4 @@
+import logger from '../logger';
 import { TaxReport } from "../models/taxReport";
 import { Transaction, isCryptoCryptoTransaction } from "../models/transaction";
 import { CurrencyRateStorage } from "../repositories/currencyRateStorage";
@@ -66,7 +67,7 @@ export async function generateTaxReport(
         const t = accountingTransactions[i];
         const isInScope = inScope(t.dateTime, periodStart, periodEnd);
         
-        console.debug(`${i} ${JSON.stringify(t.toSimpleJSON())} inscope: ${isInScope}`);
+        logger.debug(`${i} ${JSON.stringify(t.toSimpleJSON())} inscope: ${isInScope}`);
         
         // Only add to report metrics if transaction is in the tax period
         if (isInScope) {
@@ -88,7 +89,7 @@ export async function generateTaxReport(
                 remainingQuantity: t.baseSize
             });
             
-            console.debug(`Added buy position for ${t.baseCurrency}: ${t.baseSize} units at index ${i}`);
+            logger.debug(`Added buy position for ${t.baseCurrency}: ${t.baseSize} units at index ${i}`);
             
             // Update portfolio: add ALL buys (not just in-scope) to get correct current holdings
             // But mark whether this buy is in the reporting period
@@ -103,7 +104,7 @@ export async function generateTaxReport(
             
             const asset = t.baseCurrency;
             if (!buyPositions.has(asset) || buyPositions.get(asset)!.length === 0) {
-                console.warn(`No buy found before SELL of ${asset} at ${t.dateTime.toISOString()}. This may indicate incomplete transaction history.`);
+                logger.warn(`No buy found before SELL of ${asset} at ${t.dateTime.toISOString()}. This may indicate incomplete transaction history.`);
                 continue;
             }
             
@@ -143,7 +144,7 @@ export async function generateTaxReport(
                 
                 sellEvent.addBuyAllocation(allocation, allocatedBuyFee);
                 
-                console.debug(
+                logger.debug(
                     `FIFO match: Selling ${quantityToAllocate} ${asset} ` +
                     `from buy ${buyPosition.transaction.id} at ${buyPosition.transaction.dateTime.toISOString()} ` +
                     `(buy price: ${buyPosition.transaction.getTaxPrice()}, buy fee: ${allocatedBuyFee.toFixed(2)}, cost basis: ${costBasis.toFixed(2)})`
@@ -156,12 +157,12 @@ export async function generateTaxReport(
                 // Remove buy position if fully consumed
                 if (buyPosition.remainingQuantity <= 0.00000001) { // Use small epsilon for floating point comparison
                     positions.shift();
-                    console.debug(`Buy position fully consumed, removed from queue`);
+                    logger.debug(`Buy position fully consumed, removed from queue`);
                 }
             }
             
             if (remainingToSell > 0.00000001) {
-                console.warn(
+                logger.warn(
                     `Sell event ${t.id} could not be fully matched. ` +
                     `${remainingToSell} ${asset} remaining. Transaction history may be incomplete.`
                 );
@@ -186,7 +187,7 @@ export async function generateTaxReport(
                     );
                 }
                 
-                console.debug(
+                logger.debug(
                     `Sell event summary: Asset: ${asset}, Quantity: ${sellEvent.totalQuantity}, ` +
                     `Proceeds: ${sellEvent.proceeds.toFixed(2)} ${nativeCurrency}, Cost Basis: ${sellEvent.totalCostBasis.toFixed(2)} ${nativeCurrency}, ` +
                     `Buy Fees: ${sellEvent.totalBuyFees.toFixed(2)} ${nativeCurrency}, Sell Fee: ${sellEvent.sellFee.toFixed(2)} ${nativeCurrency}, ` +
@@ -328,7 +329,7 @@ async function ensureTaxConversion(
 
         transaction.setTaxConversion(nativeCurrency, conversionRate, transaction.dateTime);
     } catch (error) {
-        console.warn(
+        logger.warn(
             `Failed to ensure tax conversion for transaction ${transaction.id}: ${error}`
         );
         transaction.setTaxConversion(nativeCurrency, 1, transaction.dateTime);

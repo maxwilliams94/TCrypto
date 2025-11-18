@@ -1,3 +1,4 @@
+import logger from '../logger';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { CurrencyRate } from '../models/currencyRate';
@@ -29,13 +30,13 @@ export class CurrencyRateFileRepository implements CurrencyRateStorage {
                 this.rates.set(rate.getCacheKey(), rate);
             });
 
-            console.log(`Loaded ${this.rates.size} currency rates from ${this.filePath}`);
+            logger.info(`Loaded ${this.rates.size} currency rates from ${this.filePath}`);
         } catch (error: any) {
             if (error.code === 'ENOENT') {
-                console.log(`No existing currency rates file found at ${this.filePath}. Starting fresh.`);
+                logger.info(`No existing currency rates file found at ${this.filePath}. Starting fresh.`);
                 this.rates.clear();
             } else {
-                console.error(`Error loading currency rates: ${error.message}`);
+                logger.error(`Error loading currency rates: ${error.message}`);
                 throw error;
             }
         }
@@ -48,9 +49,9 @@ export class CurrencyRateFileRepository implements CurrencyRateStorage {
             const data = JSON.stringify(Array.from(this.rates.values()), null, 2);
             await fs.writeFile(this.filePath, data, 'utf-8');
             this.isDirty = false;
-            console.log(`Persisted ${this.rates.size} currency rates to ${this.filePath}`);
+            logger.info(`Persisted ${this.rates.size} currency rates to ${this.filePath}`);
         } catch (error: any) {
-            console.error(`Error persisting currency rates: ${error.message}`);
+            logger.error(`Error persisting currency rates: ${error.message}`);
             throw error;
         }
     }

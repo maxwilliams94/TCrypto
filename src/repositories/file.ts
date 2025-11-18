@@ -1,3 +1,4 @@
+import logger from '../logger';
 // File-based persistent storage for transactions
 
 import * as fs from 'fs/promises';
@@ -46,13 +47,13 @@ export class FileRepository implements TransactionStorage {
                 return transaction;
             });
 
-            console.log(`Loaded ${this.transactions.length} transactions from ${this.filePath}`);
+            logger.info(`Loaded ${this.transactions.length} transactions from ${this.filePath}`);
         } catch (error: any) {
             if (error.code === 'ENOENT') {
-                console.log(`No existing transaction file found at ${this.filePath}. Starting fresh.`);
+                logger.info(`No existing transaction file found at ${this.filePath}. Starting fresh.`);
                 this.transactions = [];
             } else {
-                console.error(`Error loading transactions: ${error.message}`);
+                logger.error(`Error loading transactions: ${error.message}`);
                 throw error;
             }
         }

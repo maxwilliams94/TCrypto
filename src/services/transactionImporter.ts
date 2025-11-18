@@ -6,10 +6,11 @@ import { TransactionStorage } from '../repositories/storage';
 import { ExchangeRateService } from './exchangeRateService';
 import { FileRepository } from '../repositories/file';
 import { CurrencyRateStorage } from '../repositories/currencyRateStorage';
+import logger from '../logger';
 
 export async function loadTransactionData(filePath: string, nativeCurrency: string): Promise<Array<Transaction>>{
     const data: Transaction[] = [];
-    console.log(`Loading transactions from file: ${filePath}`);
+    logger.info(`Loading transactions from file: ${filePath}`);
     return new Promise((resolve, reject) => {
         fs.createReadStream(filePath)
         .pipe(csv())
@@ -33,7 +34,7 @@ export async function loadTransactionData(filePath: string, nativeCurrency: stri
                     market_parts = [market_parts[0], nativeCurrency];
                 }
                 else {
-                    console.debug(`Skipping transaction ${row.Id} of type ${row.TransactionType} with invalid market format: ${row.Market}`);
+                    logger.debug(`Skipping transaction ${row.Id} of type ${row.TransactionType} with invalid market format: ${row.Market}`);
                     return;
                 }
             }
@@ -74,9 +75,9 @@ export async function importInitialTransactions(storage: TransactionStorage, cur
     // Load existing transactions from storage FIRST
     const existingTransactions = await storage.getAll();
     const existingIds = new Set(existingTransactions.map(t => t.id));
-    console.info(`Loaded ${existingTransactions.length} existing transactions from storage`);
+    logger.info(`Loaded ${existingTransactions.length} existing transactions from storage`);
     
-    console.info("Importing transactions from directory:", transactionDir);
+    logger.info(`Importing transactions from directory: ${transactionDir}`);
 
     const fs = require('fs');
     const path = require('path');
@@ -120,20 +121,20 @@ export async function importInitialTransactions(storage: TransactionStorage, cur
                         oldFileTransactionCount++;
                     }
                 });
-                console.log(`Successfully imported ${newFileTransactionCount} new (${oldFileTransactionCount} existing) transactions and skipped ${oldFileTransactionCount} existing transactions from ${filePath}`);
+                logger.info(`Successfully imported ${newFileTransactionCount} new (${oldFileTransactionCount} existing) transactions and skipped ${oldFileTransactionCount} existing transactions from ${filePath}`);
             } catch (error: any) {
-                console.error(`Error importing transactions from ${filePath}: ${error.message}`);
+                logger.error(`Error importing transactions from ${filePath}: ${error.message}`);
             }
         }
 
         const allTransactions = await storage.getAll();
-        console.info(`Transaction import process completed. Added ${newTransactionCount} new transactions. Total: ${allTransactions.length} transactions in the repository.`);
+        logger.info(`Transaction import process completed. Added ${newTransactionCount} new transactions. Total: ${allTransactions.length} transactions in the repository.`);
         
         // Populate tax conversions for all transactions (including existing ones)
         if (newTransactionCount > 0 || allTransactions.some(t => !t.hasTaxConversion())) {
-            console.info(`Populating tax conversions for transactions (native currency: ${nativeCurrency})...`);
+            logger.info(`Populating tax conversions for transactions (native currency: ${nativeCurrency})...`);
             await populateTaxConversionsForImport(allTransactions, nativeCurrency, currencyRateStorage);
-            console.info('Tax conversion population complete');
+            logger.info('Tax conversion population complete');
         }
         
         // Flush any pending writes for file-based storage
@@ -141,7 +142,7 @@ export async function importInitialTransactions(storage: TransactionStorage, cur
             await storage.flush();
         }
     } catch (error: any) {
-        console.error(error.message);
+        logger.error(error.message);
     }
 }
 
@@ -172,25 +173,25 @@ async function fillMissingPricesWithRateLimit(transactions: Transaction[], nativ
             // Only wait if we actually called the API
             if (apiCalled) {
                 if (priceLookupsAttempted > 0 && priceLookupsAttempted % 5 === 0) {
-                    console.debug(`Flushing currency rates to disk (processed ${priceLookupsAttempted} lookups)...`);
+                    logger.debug(`Flushing currency rates to disk (processed ${priceLookupsAttempted} lookups)...`);
                     await currencyRateStorage.flush?.();
                 }
                 await new Promise(resolve => setTimeout(resolve, 2500));
             }
         } catch (error: any) {
-            console.warn(`Error processing transaction ${transaction.id}: ${error.message}`);
+            logger.warn(`Error processing transaction ${transaction.id}: ${error.message}`);
             result.push(transaction);
-            console.log('Flushing currency rates after error to preserve successful lookups...');
+            logger.info('Flushing currency rates after error to preserve successful lookups...');
             await currencyRateStorage.flush?.();
         }
     }
     
     // Final flush to ensure all fetched prices are saved
-    console.debug('Final flush of currency rates...');
+    logger.debug('Final flush of currency rates...');
     await currencyRateStorage.flush?.();
     
     // Log summary statistics
-    if (priceLookupsAttempted) console.log(`Price lookup summary: ${priceLookupsSuccessful}/${priceLookupsAttempted} successful, ${priceLookupsSkipped} skipped (already have price)`);
+    if (priceLookupsAttempted) logger.info(`Price lookup summary: ${priceLookupsSuccessful}/${priceLookupsAttempted} successful, ${priceLookupsSkipped} skipped (already have price)`);
     
     return result;
 }
@@ -214,7 +215,7 @@ async function fillMissingPrice(transaction: Transaction, nativeCurrency: string
     // Regular TRADE transactions should already have prices from the exchange
     if (!transaction.isReward()) {
         if (!transaction.price || transaction.price <= 0) {
-            console.warn(`Trade transaction ${transaction.id} is missing price data - this may indicate a CSV data issue`);
+            logger.warn(`Trade transaction ${transaction.id} is missing price data - this may indicate a CSV data issue`);
         }
         return { transaction, apiCalled: false };
     }
@@ -222,7 +223,7 @@ async function fillMissingPrice(transaction: Transaction, nativeCurrency: string
     let apiCalled = false;
     try {
         if (!isFiat(transaction.baseCurrency)) {
-            console.log(`Looking up price for ${transaction.baseCurrency} on ${transaction.dateTime.toISOString().split('T')[0]} (${transaction.type} reward)`);
+            logger.debug(`Looking up price for ${transaction.baseCurrency} on ${transaction.dateTime.toISOString().split('T')[0]} (${transaction.type} reward)`);
             const targetCurrency = isFiat(transaction.quoteCurrency) ? transaction.quoteCurrency : nativeCurrency;
             // Try to get price from cache via getCryptoPriceInCurrency, but detect if API was called
             let cacheHit = false;
@@ -247,10 +248,10 @@ async function fillMissingPrice(transaction: Transaction, nativeCurrency: string
             // Default to 0 if undefined
             transaction.price = typeof cryptoPrice === 'number' ? cryptoPrice : 0;
             transaction.quoteSize = transaction.baseSize * (typeof cryptoPrice === 'number' ? cryptoPrice : 0);
-            console.debug(`Price lookup successful: ${transaction.baseCurrency} = ${transaction.price} ${targetCurrency} on ${transaction.dateTime.toISOString().split('T')[0]} (${transaction.type})`);
+            logger.debug(`Price lookup successful: ${transaction.baseCurrency} = ${transaction.price} ${targetCurrency} on ${transaction.dateTime.toISOString().split('T')[0]} (${transaction.type})`);
         }
     } catch (error: any) {
-        console.warn(`Failed to fetch price for ${transaction.baseCurrency} on ${transaction.dateTime.toISOString().split('T')[0]} (${transaction.type}): ${error.message}`);
+        logger.warn(`Failed to fetch price for ${transaction.baseCurrency} on ${transaction.dateTime.toISOString().split('T')[0]} (${transaction.type}): ${error.message}`);
     }
     return { transaction, apiCalled };
 }
@@ -295,11 +296,11 @@ async function populateTaxConversionsForImport(
     );
     
     if (transactionsNeedingConversion.length === 0) {
-        console.log('All transactions already have tax conversions');
+        logger.info('All transactions already have tax conversions');
         return;
     }
     
-    console.log(`Converting ${transactionsNeedingConversion.length} transactions to ${taxCurrency}`);
+    logger.info(`Converting ${transactionsNeedingConversion.length} transactions to ${taxCurrency}`);
     
     for (const transaction of transactionsNeedingConversion) {
         // Skip if quote currency is already the tax currency
@@ -325,7 +326,7 @@ async function populateTaxConversionsForImport(
             transaction.setTaxConversion(taxCurrency, exchangeRate, transaction.dateTime);
             
         } catch (error) {
-            console.warn(
+            logger.warn(
                 `Failed to convert transaction ${transaction.id} from ${transaction.quoteCurrency} to ${taxCurrency}: ${error}`
             );
             // Fall back to no conversion (rate of 1.0)

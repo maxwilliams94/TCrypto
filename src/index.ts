@@ -1,3 +1,4 @@
+import logger from './logger';
 import express, { Express, Request, Response, Application } from 'express';
 
 import { createTransactionRespository } from './repositories/memory';
@@ -35,26 +36,26 @@ const currencyRateRepository: CurrencyRateStorage = USE_FILE_STORAGE
 
 export { transactionRepository, currencyRateRepository };
 
-console.log(`Using ${USE_FILE_STORAGE ? 'file-based' : 'in-memory'} storage${USE_FILE_STORAGE ? ` at ${DATA_FILE_PATH}` : ''}`);
+logger.info(`Using ${USE_FILE_STORAGE ? 'file-based' : 'in-memory'} storage${USE_FILE_STORAGE ? ` at ${DATA_FILE_PATH}` : ''}`);
 
 // Graceful shutdown handler
 async function gracefulShutdown(signal: string) {
-    console.log(`\n${signal} received. Shutting down gracefully...`);
+    logger.info(`\n${signal} received. Shutting down gracefully...`);
     
     // Flush any pending writes for file-based storage
     if (transactionRepository instanceof FileRepository) {
-        console.log('Flushing transactions to disk...');
+        logger.info('Flushing transactions to disk...');
         await transactionRepository.flush();
     }
     
     if (currencyRateRepository instanceof CurrencyRateFileRepository) {
-        console.log('Flushing currency rates to disk...');
+        logger.info('Flushing currency rates to disk...');
         await currencyRateRepository.flush();
     }
     
 
     
-    console.log('Shutdown complete. Exiting.');
+    logger.info('Shutdown complete. Exiting.');
     process.exit(0);
 }
 
@@ -80,13 +81,13 @@ async function main() {
 
     try {
     app.listen(PORT, () => {
-        console.log(`Server is running on http://localhost:${PORT}`);
+        logger.info(`Server is running on http://localhost:${PORT}`);
     });
     } catch (error) {
     if (error instanceof Error) {
-        console.error(`Error starting server: ${error.message}`);
+        logger.error(`Error starting server: ${error.message}`);
     } else {
-        console.error('An unknown error occurred while starting the server.');
+        logger.error('An unknown error occurred while starting the server.');
     }
     process.exit(1);
     }

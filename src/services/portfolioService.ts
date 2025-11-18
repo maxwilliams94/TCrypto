@@ -1,3 +1,4 @@
+import logger from '../logger';
 import { Transaction } from "../models/transaction";
 import { Portfolio } from "../models/portfolio";
 import { CurrencyRateStorage } from "../repositories/currencyRateStorage";
@@ -49,7 +50,7 @@ export async function generatePortfolioSnapshot(
             );
             position.updateMarketValue(currentPrice);
         } catch (error) {
-            console.warn(`Failed to fetch price for ${position.asset}: ${error}`);
+            logger.warn(`Failed to fetch price for ${position.asset}: ${error}`);
             // Leave market value undefined if price lookup fails
         }
     }

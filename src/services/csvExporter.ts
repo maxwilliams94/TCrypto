@@ -1,3 +1,4 @@
+import logger from '../logger';
 /**
  * CSV export utilities for tax reports and sell events
  */
@@ -95,7 +96,7 @@ export async function exportSellEventsToCSV(
 
     const csv = arrayToCSV(headers, rows);
     await fs.writeFile(outputPath, csv, 'utf-8');
-    console.log(`Exported ${sellEvents.length} sell events to ${outputPath}`);
+    logger.info(`Exported ${sellEvents.length} sell events to ${outputPath}`);
 }
 
 /**
@@ -151,7 +152,7 @@ export async function exportSellEventAllocationsToCSV(
 
     const csv = arrayToCSV(headers, rows);
     await fs.writeFile(outputPath, csv, 'utf-8');
-    console.log(`Exported ${rows.length} sell event allocations to ${outputPath}`);
+    logger.info(`Exported ${rows.length} sell event allocations to ${outputPath}`);
 }
 
 /**
@@ -201,7 +202,7 @@ export async function exportPortfolioToCSV(
 
     const csv = arrayToCSV(headers, rows);
     await fs.writeFile(outputPath, csv, 'utf-8');
-    console.log(`Exported ${rows.length} portfolio positions to ${outputPath}`);
+    logger.info(`Exported ${rows.length} portfolio positions to ${outputPath}`);
 }
 
 /**
@@ -233,7 +234,7 @@ export async function exportTaxReportSummaryToCSV(
 
     const csv = arrayToCSV(headers, rows);
     await fs.writeFile(outputPath, csv, 'utf-8');
-    console.log(`Exported tax report summary to ${outputPath}`);
+    logger.info(`Exported tax report summary to ${outputPath}`);
 }
 
 /**
@@ -279,5 +280,5 @@ export async function exportTaxReportComplete(
         );
     }
 
-    console.log(`\n✅ Complete tax report exported to ${outputDir}/`);
+    logger.info(`\n✅ Complete tax report exported to ${outputDir}/`);
 }
