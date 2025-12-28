@@ -40,10 +40,31 @@ export class FileRepository implements TransactionStorage {
                     t.quoteSize,
                     t.price,
                     t.fee,
-                    new Date(t.dateTime)
+                    new Date(t.dateTime),
+                    t.type ?? 'TRADE'
                 );
+                
                 // Restore tax conversion fields
-                if (t.taxCurrency) transaction.taxCurrency = t.taxCurrency;
+                if (t.taxCurrency !== undefined) transaction.taxCurrency = t.taxCurrency;
+                if (t.taxQuoteSize !== undefined) transaction.taxQuoteSize = t.taxQuoteSize;
+                if (t.taxPrice !== undefined) transaction.taxPrice = t.taxPrice;
+                if (t.taxFee !== undefined) transaction.taxFee = t.taxFee;
+                if (t.taxConversionRate !== undefined) transaction.taxConversionRate = t.taxConversionRate;
+                if (t.taxConversionDate) transaction.taxConversionDate = new Date(t.taxConversionDate);
+                if (t.feeCurrency !== undefined) transaction.feeCurrency = t.feeCurrency;
+                
+                // Restore processing/leg/source
+                if (t.sourceTransactionId !== undefined) transaction.sourceTransactionId = t.sourceTransactionId;
+                if (t.leg !== undefined) transaction.leg = t.leg;
+                if (t.processingSequence !== undefined) transaction.processingSequence = t.processingSequence;
+                
+                // Restore reward/income fields
+                if (t.rewardSource !== undefined) transaction.rewardSource = t.rewardSource;
+                if (t.incomeValue !== undefined) transaction.incomeValue = t.incomeValue;
+                if (t.incomeValueInTaxCurrency !== undefined) transaction.incomeValueInTaxCurrency = t.incomeValueInTaxCurrency;
+                if (t.incomeConversionRate !== undefined) transaction.incomeConversionRate = t.incomeConversionRate;
+                if (t.incomeDate) transaction.incomeDate = new Date(t.incomeDate);
+                
                 return transaction;
             });
 
@@ -136,19 +157,29 @@ export class FileRepository implements TransactionStorage {
     async exportToCSV(outputPath: string): Promise<void> {
         await this.ensureLoaded();
         
-        const headers = ['Id', 'Status', 'Market', 'Exchange', 'Side', 'FilledQuantity', 'FilledQuote', 'FilledPrice', 'Fee', 'Filled At'];
-        const rows = this.transactions.sort((a, b) => a.dateTime.getTime() - b.dateTime.getTime()).map(t => [
-            t.id || '',
-            'FILLED', // Assuming all stored transactions are filled
-            `${t.baseCurrency}-${t.quoteCurrency}`,
-            t.exchange || '',
-            t.side || '',
-            (t.baseSize ?? 0).toString(),
-            (t.quoteSize ?? 0).toString(),
-            (t.price ?? 0).toString(),
-            (t.fee ?? 0).toString(),
-            t.dateTime ? t.dateTime.toISOString() : ''
-        ]);
+        const headers = ['Id', 'Status', 'Type', 'Market', 'Exchange', 'Side', 'FilledQuantity', 'FilledQuote', 'FilledPrice', 'Fee', 'Filled At'];
+        const rows = this.transactions
+            .sort((a, b) => a.dateTime.getTime() - b.dateTime.getTime())
+            .map(t => {
+                const filledQuoteNumber = t.isReward()
+                    ? (t.getIncomeValueInTaxCurrency() || t.getIncomeValue() || 0)
+                    : (t.taxQuoteSize !== undefined
+                        ? t.taxQuoteSize
+                        : ((t.quoteSize ?? 0) * (t.taxConversionRate ?? 1)));
+                return [
+                    t.id || '',
+                    'FILLED', // Assuming all stored transactions are filled
+                    t.type || 'TRADE',
+                    `${t.baseCurrency}-${t.quoteCurrency}`,
+                    t.exchange || '',
+                    t.side || '',
+                    (t.baseSize ?? 0).toString(),
+                    (filledQuoteNumber ?? 0).toString(),
+                    (t.price ?? 0).toString(),
+                    (t.fee ?? 0).toString(),
+                    t.dateTime ? t.dateTime.toISOString() : ''
+                ];
+            });
 
         const csv = [headers, ...rows]
             .map(row => row.map(cell => `"${cell}"`).join(','))
