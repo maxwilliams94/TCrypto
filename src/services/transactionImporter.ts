@@ -234,7 +234,7 @@ async function fillMissingPrice(transaction: Transaction, nativeCurrency: string
     try {
         if (!isFiat(transaction.baseCurrency)) {
             logger.debug(`Looking up price for ${transaction.baseCurrency} on ${transaction.dateTime.toISOString().split('T')[0]} (${transaction.type} reward)`);
-            const targetCurrency = isFiat(transaction.quoteCurrency) ? transaction.quoteCurrency : nativeCurrency;
+            const targetCurrency = isFiat(transaction.quoteCurrency) ? mapStablecoinToFiat(transaction.quoteCurrency) : nativeCurrency;
             // Try to get price from cache via getCryptoPriceInCurrency, but detect if API was called
             let cacheHit = false;
             let cryptoPrice: number | undefined;
@@ -283,8 +283,28 @@ function mapTransactionType(type: string): TransactionType | undefined {
 }
 
 function isFiat(currency: string): boolean {
+    const upperCurrency = currency.toUpperCase();
     const fiatCurrencies = ['USD', 'EUR', 'GBP', 'NOK', 'SEK', 'DKK', 'JPY', 'CNY', 'AUD', 'CAD'];
-    return fiatCurrencies.includes(currency.toUpperCase());
+    const stablecoins = ['USDC', 'USDT', 'USDP', 'DAI', 'FRAX', 'BUSD', 'TUSD'];
+    return fiatCurrencies.includes(upperCurrency) || stablecoins.includes(upperCurrency);
+}
+
+/**
+ * Maps stablecoins to their underlying fiat currencies for exchange rate lookups.
+ * Stablecoins should be treated as their underlying fiat for Norges Bank API calls.
+ */
+function mapStablecoinToFiat(currency: string): string {
+    const upperCurrency = currency.toUpperCase();
+    const stablecoinMap: { [key: string]: string } = {
+        'USDC': 'USD',
+        'USDT': 'USD',
+        'USDP': 'USD',
+        'DAI': 'USD',
+        'FRAX': 'USD',
+        'BUSD': 'USD',
+        'TUSD': 'USD'
+    };
+    return stablecoinMap[upperCurrency] || upperCurrency;
 }
 
 /**
@@ -324,8 +344,10 @@ async function populateTaxConversionsForImport(
         try {
             // Fetch exchange rate for quote currency -> tax currency
             let exchangeRate: number;
+            const quoteCurrencyForLookup = mapStablecoinToFiat(transaction.quoteCurrency);
+            
             if (isFiat(transaction.quoteCurrency)) {
-                exchangeRate = await exchangeRateService.getCcyNokRate(transaction.quoteCurrency, transaction.dateTime);
+                exchangeRate = await exchangeRateService.getCcyNokRate(quoteCurrencyForLookup, transaction.dateTime);
             } else {
                 exchangeRate = await exchangeRateService.getCryptoPriceInCurrency(
                     transaction.quoteCurrency,
