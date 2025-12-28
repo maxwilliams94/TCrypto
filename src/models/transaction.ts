@@ -24,10 +24,6 @@ export class Transaction {
     taxConversionDate?: Date;       // Date used for the exchange rate lookup
     feeCurrency?: string;           // Currency of the fee (for future support of non-fiat fees)
     
-    // Staking/reward specific fields
-    validator?: string;      // For staking rewards
-    epoch?: number;          // For staking rewards
-    rewardSource?: string;   // Source of the reward (e.g., 'cardano', 'polkadot')
     sourceTransactionId?: string; // Link back to original trade when using derived legs
     leg?: 'BASE' | 'QUOTE' | 'ORIGINAL';
     processingSequence?: number;
@@ -61,6 +57,7 @@ export class Transaction {
 
     toSimpleJSON() {
         const baseInfo = {
+            id: this.id,
             CCY: `${this.baseCurrency}-${this.quoteCurrency}`,
             exchange: this.exchange,
             side: this.side,

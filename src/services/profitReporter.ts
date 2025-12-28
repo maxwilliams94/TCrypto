@@ -68,7 +68,6 @@ export async function generateTaxReport(
         const isInScope = inScope(t.dateTime, periodStart, periodEnd);
         
         logger.debug(`${i} ${JSON.stringify(t.toSimpleJSON())} inscope: ${isInScope}`);
-        
         // Only add to report metrics if transaction is in the tax period
         if (isInScope) {
             taxReport.assets!.add(t.baseCurrency);
@@ -155,13 +154,13 @@ export async function generateTaxReport(
                 remainingToSell -= quantityToAllocate;
                 
                 // Remove buy position if fully consumed
-                if (buyPosition.remainingQuantity <= 0.00000001) { // Use small epsilon for floating point comparison
+                if (buyPosition.remainingQuantity <= 0.00000000001) { // Use small epsilon for floating point comparison
                     positions.shift();
-                    logger.debug(`Buy position fully consumed, removed from queue`);
+                    logger.debug(`${buyPosition.transaction.baseCurrency} buy position fully consumed, removed from queue`);
                 }
             }
             
-            if (remainingToSell > 0.00000001) {
+            if (remainingToSell > 0.00000000001) {
                 logger.warn(
                     `Sell event ${t.id} could not be fully matched. ` +
                     `${remainingToSell} ${asset} remaining. Transaction history may be incomplete.`
@@ -209,6 +208,9 @@ export async function generateTaxReport(
                 }
             }
         }
+        if (logger.isDebugEnabled()) {
+            logger.debug(`Portfolio after processing transaction ${t.id}:\n${mapToJSONString(calculateTotalPositionsPerAsset(buyPositions))}`);
+        }
     }
     
     return taxReport;
@@ -230,6 +232,7 @@ async function expandTransactionsForAccounting(
         await ensureTaxConversion(original, nativeCurrency, exchangeRateService);
 
         if (isCryptoCryptoTransaction(original)) {
+            logger.debug(`Expanding transaction ${original.id} (${original.side} ${original.baseCurrency}-${original.quoteCurrency}) for accounting`);
             const quoteToNative = original.taxConversionRate ?? 1;
             const quoteValueNative = original.taxQuoteSize ?? (original.quoteSize * quoteToNative);
             const basePriceNative = original.taxPrice ?? (original.price * quoteToNative);
@@ -271,7 +274,9 @@ async function expandTransactionsForAccounting(
             buyTx.leg = 'BASE';
             buyTx.setTaxConversion(nativeCurrency, 1, original.dateTime);
             buyTx.feeCurrency = nativeCurrency;
-
+            logger.debug(`Created synthetic 
+                SELL ${sellTx.id} (${sellTx.baseCurrency}-${sellTx.quoteCurrency}) and 
+                BUY  ${buyTx.id} (${buyTx.baseCurrency}-${buyTx.quoteCurrency}) for accounting`);
             expanded.push(sellTx, buyTx);
         } else {
             original.processingSequence = sequence++;
@@ -333,4 +338,21 @@ async function ensureTaxConversion(
 function isFiatCurrency(currency: string): boolean {
     const fiatCurrencies = ['USD', 'EUR', 'GBP', 'NOK', 'SEK', 'DKK', 'JPY', 'CNY', 'AUD', 'CAD'];
     return fiatCurrencies.includes(currency.toUpperCase());
+}
+
+function calculateTotalPositionsPerAsset(buyPositions: Map<string, BuyPosition[]>): Map<string, number> {
+  const totals = new Map<string, number>();
+  for (const [asset, positions] of buyPositions.entries()) {
+    const total = positions.reduce((sum, pos) => sum + pos.remainingQuantity, 0);
+    totals.set(asset, total);
+  }
+  return totals;
+}
+
+function mapToJSONString(map: Map<string, number>): string {
+    const obj: { [key: string]: number } = {};
+    for (const [key, value] of map.entries()) {
+        obj[key] = value;
+    }
+    return JSON.stringify(obj, null, 2);
 }
