@@ -28,6 +28,16 @@ export class Transaction {
     leg?: 'BASE' | 'QUOTE' | 'ORIGINAL';
     processingSequence?: number;
     
+    // Reward-specific fields (for STAKING_REWARD, MINING_REWARD, AIRDROP, LENDING_REWARD, FORK)
+    rewardSource?: string;          // Source of reward (e.g., 'Lido', 'Kraken Staking', 'Mining Pool')
+    
+    // Income tracking for rewards (separate from cost basis for asset)
+    // When a reward is earned, it's INCOME at that value. Then it becomes an ASSET with cost basis = income value.
+    incomeValue?: number;           // The value of the reward at time of earning (in original currency)
+    incomeValueInTaxCurrency?: number; // Income value converted to tax currency
+    incomeConversionRate?: number;  // Exchange rate used to convert income value to tax currency
+    incomeDate?: Date;              // Date when the income was realized (usually same as dateTime for rewards)
+    
 
     constructor(
         id: string,
@@ -56,7 +66,7 @@ export class Transaction {
     }
 
     toSimpleJSON() {
-        const baseInfo = {
+        const baseInfo: any = {
             id: this.id,
             CCY: `${this.baseCurrency}-${this.quoteCurrency}`,
             exchange: this.exchange,
@@ -70,16 +80,29 @@ export class Transaction {
             leg: this.leg
         };
 
+        // Add reward-specific fields if present
+        if (this.isReward()) {
+            Object.assign(baseInfo, {
+                rewardSource: this.rewardSource,
+                incomeValue: this.incomeValue,
+                incomeDate: this.incomeDate?.toISOString()
+            });
+        }
+
         // Add tax conversion fields if available
         if (this.hasTaxConversion()) {
-            return {
-                ...baseInfo,
+            Object.assign(baseInfo, {
                 taxCurrency: this.taxCurrency,
                 taxPrice: this.taxPrice,
                 taxQuoteSize: this.taxQuoteSize,
                 taxFee: this.taxFee,
                 taxConversionRate: this.taxConversionRate
-            };
+            });
+        }
+
+        // Add income tracking in tax currency if available
+        if (this.incomeValueInTaxCurrency !== undefined) {
+            baseInfo['incomeValueInTaxCurrency'] = this.incomeValueInTaxCurrency;
         }
 
         return baseInfo;
@@ -97,6 +120,70 @@ export class Transaction {
      */
     isTaxableIncome(): boolean {
         return this.isReward() || this.type === 'TRANSFER_IN';
+    }
+
+    /**
+     * Set the income value for reward transactions.
+     * This represents the fair market value of the reward at the time it was earned.
+     * The income is taxable in the year it was earned, even if the asset is sold later.
+     * 
+     * For cost basis purposes, the asset's cost basis is set equal to this income value.
+     * 
+     * @param incomeValue The FMV of the reward in the original currency
+     * @param conversionRate Exchange rate to convert income value to tax currency
+     * @param conversionDate Date used for the exchange rate lookup
+     */
+    setRewardIncome(
+        incomeValue: number,
+        conversionRate?: number,
+        conversionDate?: Date
+    ): void {
+        if (!this.isReward()) {
+            throw new Error(`Cannot set reward income on non-reward transaction type: ${this.type}`);
+        }
+        
+        this.incomeValue = incomeValue;
+        this.incomeDate = conversionDate || this.dateTime;
+        
+        // If conversion rate is provided, also store the converted income value
+        if (conversionRate !== undefined && this.taxCurrency) {
+            this.incomeConversionRate = conversionRate;
+            this.incomeValueInTaxCurrency = incomeValue * conversionRate;
+        }
+    }
+
+    /**
+     * Get the income value to report for tax purposes
+     * For rewards, this is typically the FMV at time of earning
+     */
+    getIncomeValue(): number {
+        if (!this.isReward()) {
+            return 0;
+        }
+        return this.incomeValue ?? this.quoteSize; // Fall back to quoteSize if incomeValue not set
+    }
+
+    /**
+     * Get the income value in tax currency
+     */
+    getIncomeValueInTaxCurrency(): number {
+        if (!this.isReward()) {
+            return 0;
+        }
+        if (this.incomeValueInTaxCurrency !== undefined) {
+            return this.incomeValueInTaxCurrency;
+        }
+        if (this.incomeValue !== undefined && this.incomeConversionRate !== undefined) {
+            return this.incomeValue * this.incomeConversionRate;
+        }
+        return this.taxQuoteSize ?? this.quoteSize; // Fall back to taxQuoteSize or quoteSize
+    }
+
+    /**
+     * Check if this reward has explicit income tracking set
+     */
+    hasIncomeTracking(): boolean {
+        return this.incomeValue !== undefined;
     }
 
     /**

@@ -68,6 +68,30 @@ export async function generateTaxReport(
         const isInScope = inScope(t.dateTime, periodStart, periodEnd);
         
         logger.debug(`${i} ${JSON.stringify(t.toSimpleJSON())} inscope: ${isInScope}`);
+        
+        // Track income for reward transactions
+        if (isInScope && t.isReward()) {
+            const incomeValue = t.getIncomeValue();
+            const incomeValueInTaxCurrency = t.getIncomeValueInTaxCurrency();
+            
+            taxReport.incomeEvents!.push({
+                transactionId: t.id,
+                asset: t.baseCurrency,
+                quantity: t.baseSize,
+                incomeValue: incomeValue,
+                incomeValueInTaxCurrency: incomeValueInTaxCurrency,
+                incomeDate: t.dateTime,
+                type: t.type
+            });
+            
+            taxReport.totalIncome = (taxReport.totalIncome || 0) + incomeValueInTaxCurrency;
+            
+            logger.debug(
+                `Income event: ${t.type} of ${t.baseSize} ${t.baseCurrency} ` +
+                `(value: ${incomeValue} ${t.quoteCurrency} = ${incomeValueInTaxCurrency} ${nativeCurrency})`
+            );
+        }
+        
         // Only add to report metrics if transaction is in the tax period
         if (isInScope) {
             taxReport.assets!.add(t.baseCurrency);
@@ -95,9 +119,13 @@ export async function generateTaxReport(
             // Skip native currency (fiat) - we only track crypto assets
             if (t.baseCurrency !== nativeCurrency) {
                 const position = portfolio.getPosition(t.baseCurrency);
-                position.addBuy(t.baseSize, t.getTaxPrice(), t.getTaxFee(), isInScope);
+                // Use quote-based price per unit derived from taxQuoteSize
+                const taxQuoteSize = (t.taxQuoteSize !== undefined)
+                    ? t.taxQuoteSize
+                    : (t.quoteSize * (t.taxConversionRate ?? 1));
+                const pricePerUnitFromQuote = t.baseSize > 0 ? (taxQuoteSize / t.baseSize) : t.getTaxPrice();
+                position.addBuy(t.baseSize, pricePerUnitFromQuote, t.getTaxFee(), isInScope);
             }
-            
         } else if (t.side === 'SELL') {
             if (isInScope) taxReport.sells!++;
             
@@ -131,9 +159,14 @@ export async function generateTaxReport(
                 // If we're using 50% of the buy, we include 50% of the buy fee in the cost basis
                 const proportionOfBuy = quantityToAllocate / buyPosition.transaction.baseSize;
                 const allocatedBuyFee = buyPosition.transaction.getTaxFee() * proportionOfBuy;
-                
-                // Cost basis = (price * quantity) + proportional buy fee
-                const costBasis = (buyPosition.transaction.getTaxPrice() * quantityToAllocate) + allocatedBuyFee;
+
+                // Cost basis should use quoteSize (total amount spent) in tax currency
+                const buyTaxQuoteSize =
+                    (buyPosition.transaction.taxQuoteSize !== undefined)
+                        ? buyPosition.transaction.taxQuoteSize
+                        : (buyPosition.transaction.quoteSize * (buyPosition.transaction.taxConversionRate ?? 1));
+                const allocatedQuoteValue = buyTaxQuoteSize * proportionOfBuy;
+                const costBasis = allocatedQuoteValue + allocatedBuyFee;
                 
                 const allocation: BuyAllocation = {
                     buyTransactionId: buyPosition.transaction.id,
@@ -146,7 +179,7 @@ export async function generateTaxReport(
                 logger.debug(
                     `FIFO match: Selling ${quantityToAllocate} ${asset} ` +
                     `from buy ${buyPosition.transaction.id} at ${buyPosition.transaction.dateTime.toISOString()} ` +
-                    `(buy price: ${buyPosition.transaction.getTaxPrice()}, buy fee: ${allocatedBuyFee.toFixed(2)}, cost basis: ${costBasis.toFixed(2)})`
+                    `(allocated quote: ${allocatedQuoteValue.toFixed(8)}, buy fee: ${allocatedBuyFee.toFixed(2)}, cost basis: ${costBasis.toFixed(2)})`
                 );
                 
                 // Update remaining quantities
@@ -327,11 +360,23 @@ async function ensureTaxConversion(
         }
 
         transaction.setTaxConversion(nativeCurrency, conversionRate, transaction.dateTime);
+        
+        // For reward transactions, also set the income value (FMV at time of earning)
+        if (transaction.isReward() && !transaction.hasIncomeTracking()) {
+            // Income value = quantity * price (in the original quote currency)
+            const incomeValue = transaction.quoteSize;
+            transaction.setRewardIncome(incomeValue, conversionRate, transaction.dateTime);
+        }
     } catch (error) {
         logger.warn(
             `Failed to ensure tax conversion for transaction ${transaction.id}: ${error}`
         );
         transaction.setTaxConversion(nativeCurrency, 1, transaction.dateTime);
+        
+        // Still set reward income even if conversion fails
+        if (transaction.isReward() && !transaction.hasIncomeTracking()) {
+            transaction.setRewardIncome(transaction.quoteSize, 1, transaction.dateTime);
+        }
     }
 }
 

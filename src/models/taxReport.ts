@@ -22,6 +22,18 @@ export class TaxReport {
     totalBuyFeesIncluded?: number = 0;  // Total buy fees included in sell events
     totalSellFees?: number = 0;         // Total sell fees
     
+    // Income tracking for rewards (separate from profit/loss on sales)
+    incomeEvents?: Array<{
+        transactionId: string;
+        asset: string;
+        quantity: number;
+        incomeValue: number;        // Income in base currency at time of earning
+        incomeValueInTaxCurrency: number;  // Income converted to tax currency
+        incomeDate: Date;
+        type: string;               // STAKING_REWARD, MINING_REWARD, AIRDROP, etc.
+    }> = [];
+    totalIncome?: number = 0;           // Total income from rewards (in tax currency)
+    
     // Portfolio tracking
     portfolio?: Portfolio;
 
