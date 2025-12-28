@@ -1,6 +1,6 @@
 
 
-export type TransactionType = 'TRADE' | 'STAKING_REWARD' | 'LENDING_REWARD' | 'AIRDROP' | 'MINING_REWARD' | 'FORK' | 'TRANSFER_IN' | 'TRANSFER_OUT' | 'WITHDRAW' | 'DEPOSIT';
+export type TransactionType = 'TRADE' | 'STAKING_REWARD' | 'LENDING_REWARD' | 'AIRDROP' | 'MINING_REWARD' | 'FORK' | 'INTERNAL_TRANSFER' | 'WITHDRAW' | 'DEPOSIT';
 
 export class Transaction {
     id: string;
@@ -119,7 +119,7 @@ export class Transaction {
      * Check if this transaction represents income for tax purposes
      */
     isTaxableIncome(): boolean {
-        return this.isReward() || this.type === 'TRANSFER_IN';
+        return this.isReward();
     }
 
     /**

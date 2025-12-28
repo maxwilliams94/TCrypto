@@ -3,7 +3,7 @@
 TCrypto is a TypeScript/Node service for importing, normalising and reporting on crypto transactions with comprehensive support for different transaction types including staking rewards (CSV import -> repository -> tax/profit reporting endpoints).
 
 Key directories/files to read first:
-- `src/models/transaction.ts` — Enhanced Transaction model with TransactionType enum supporting 'TRADE', 'STAKING_REWARD', 'LENDING_REWARD', 'AIRDROP', 'MINING_REWARD', 'FORK', 'TRANSFER_IN', 'TRANSFER_OUT', 'WITHDRAW', 'DEPOSIT'. Contains reward-specific fields (validator, epoch, rewardSource).
+- `src/models/transaction.ts` — Enhanced Transaction model with TransactionType enum supporting 'TRADE', 'STAKING_REWARD', 'LENDING_REWARD', 'AIRDROP', 'MINING_REWARD', 'FORK', 'INTERNAL_TRANSFER', 'WITHDRAW', 'DEPOSIT'. Contains reward-specific fields (validator, epoch, rewardSource).
 - `src/services/transactionImporter.ts` — CSV parsing, strict header validation, and the import flow that may split crypto/crypto trades into two native-currency transactions. Now imports WITHDRAW/DEPOSIT transactions for fee tracking.
 - `src/services/exchangeRateService.ts` — Enhanced with CoinGecko API integration for crypto price fetching alongside Norges Bank FX rates. Supports historical crypto prices and batch operations.
 - `src/repositories/storage.ts` — `TransactionStorage` interface; implement this to add persistent storage.

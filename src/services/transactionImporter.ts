@@ -274,8 +274,7 @@ function mapTransactionType(type: string): TransactionType | undefined {
         'AIRDROP': 'AIRDROP',
         'MINING_REWARD': 'MINING_REWARD',
         'FORK': 'FORK',
-        'TRANSFER_IN': 'TRANSFER_IN',
-        'TRANSFER_OUT': 'TRANSFER_OUT',
+        'INTERNAL_TRANSFER': 'INTERNAL_TRANSFER',
         'WITHDRAW': 'WITHDRAW',
         'WITHDRAWAL': 'WITHDRAW',  // Support both spellings
         'DEPOSIT': 'DEPOSIT'

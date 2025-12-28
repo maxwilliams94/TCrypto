@@ -137,8 +137,7 @@ LENDING_REWARD          # Lending rewards
 AIRDROP                 # Airdrop receipts
 MINING_REWARD           # Mining rewards
 FORK                    # Fork receipts
-TRANSFER_IN             # Incoming transfer (treated as buy)
-TRANSFER_OUT            # Outgoing transfer (treated as sell)
+INTERNAL_TRANSFER       # treated as untaxable
 WITHDRAWAL              # Withdrawal with fee (no gain/loss) [NEW]
 TRANSFER                # Transfer with fee (no gain/loss) [NEW]
 ```
@@ -162,7 +161,7 @@ reward-123,FILLED,ADA-NOK,cardano,BUY,STAKING_REWARD,5.5,46.75,8.5,0,2024-01-15T
 ### Example 3: Transfer from Another Exchange
 ```csv
 Id,Status,Market,Side,TransactionType,FilledQuantity,FilledQuote,FilledPrice,Fee,Timestamp,Notes
-transfer-001,FILLED,BTC-NOK,BUY,TRANSFER_IN,0.5,200000,400000,0,2024-06-01T10:00:00Z,Transferred from Kraken
+transfer-001,FILLED,BTC-NOK,BUY,DEPOSIT,0.5,200000,400000,0,2024-06-01T10:00:00Z,Transferred from Kraken
 ```
 
 ### Example 4: Withdrawal to Hardware Wallet
