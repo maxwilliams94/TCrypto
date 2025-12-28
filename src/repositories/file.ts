@@ -157,7 +157,7 @@ export class FileRepository implements TransactionStorage {
     async exportToCSV(outputPath: string): Promise<void> {
         await this.ensureLoaded();
         
-        const headers = ['Id', 'Status', 'Type', 'Market', 'Exchange', 'Side', 'FilledQuantity', 'FilledQuote', 'FilledPrice', 'Fee', 'Filled At'];
+        const headers = ['Id', 'Status', 'Type', 'Market', 'Exchange', 'Side', 'FilledQuantity', 'FilledQuote', 'FilledPrice', 'Fee', 'FeeCurrency', 'Filled At'];
         const rows = this.transactions
             .sort((a, b) => a.dateTime.getTime() - b.dateTime.getTime())
             .map(t => {
@@ -177,6 +177,7 @@ export class FileRepository implements TransactionStorage {
                     (filledQuoteNumber ?? 0).toString(),
                     (t.price ?? 0).toString(),
                     (t.fee ?? 0).toString(),
+                    ((t.fee ?? 0) > 0 ? (t.feeCurrency || t.quoteCurrency || '') : '').toString(),
                     t.dateTime ? t.dateTime.toISOString() : ''
                 ];
             });

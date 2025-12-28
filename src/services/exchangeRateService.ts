@@ -1,5 +1,7 @@
 import logger from '../logger';
 import axios from 'axios';
+import * as fs from 'fs/promises';
+import csv from 'csv-parser';
 import { CurrencyRate } from '../models/currencyRate';
 import { CurrencyRateStorage } from '../repositories/currencyRateStorage';
 
@@ -7,6 +9,8 @@ export class ExchangeRateService {
     private BASE_URL = 'https://data.norges-bank.no/api/data/EXR/B.CCY.NOK.SP';
     private cryptoApiBaseUrl = 'https://api.coingecko.com/api/v3';
     private coinGeckoApiKey: string | undefined;
+    private csvRatesLoaded: boolean = false;
+    private csvRatesMap: Map<string, Map<string, Array<{ date: string; rate: number }>>> = new Map();
     
     constructor(private rateStorage: CurrencyRateStorage) {
         this.coinGeckoApiKey = process.env.COINGECKO_API_KEY;
@@ -60,6 +64,11 @@ export class ExchangeRateService {
      * @returns The exchange rate as a number.
      */
     async getCcyNokRate(currency: string, date: Date): Promise<number> {
+        // Short-circuit: if currency is already NOK, no conversion needed
+        if (currency.toUpperCase() === 'NOK') {
+            return 1.0;
+        }
+
         // Try to get from storage first (normalize date to start of day)
         const normalizedDate = this.normalizeDate(date);
         const existingRate = await this.rateStorage.getRate(currency, 'NOK', normalizedDate);
@@ -109,7 +118,7 @@ export class ExchangeRateService {
         const base_url = this.BASE_URL.replace('CCY', mapCurrency(currency).toUpperCase());
         
         // Try up to 10 days back to handle weekends and bank holidays
-        const maxRetries = 10;
+        const maxRetries = 6;
         let currentDate = new Date(date); // Don't mutate original date
         
         for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -147,7 +156,13 @@ export class ExchangeRateService {
             currentDate.setDate(currentDate.getDate() - 1);
         }
         
-        throw new Error(`Failed to fetch exchange rate for ${currency} after ${maxRetries} attempts (from ${formatDateToYYYYMMDD(date)} back to ${formatDateToYYYYMMDD(currentDate)}).`);
+        // Fallback to CSV rates on API failure
+        logger.info(`Norges Bank API failed for ${currency}. Attempting fallback to CSV rates...`);
+        try {
+            return await this.getCsvRate(currency, date);
+        } catch (csvError) {
+            throw new Error(`Failed to fetch exchange rate for ${currency} from API and CSV fallback: ${csvError}`);
+        }
     }
 
     /**
@@ -434,6 +449,109 @@ export class ExchangeRateService {
      */
     private normalizeDate(date: Date): Date {
         return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    }
+
+    /**
+     * Lazily load and query historical exchange rates from CSV file (USDEURGBP-NOK_rates_2020-12-28-2025-12-28.csv).
+     * Only loaded on first call (first API failure), then cached in memory.
+     * Results are stored in currency-rates.json for persistence.
+     */
+    private async getCsvRate(currency: string, date: Date): Promise<number> {
+        // Lazy-load CSV on first call
+        if (!this.csvRatesLoaded) {
+            await this.loadCsvRates();
+        }
+
+        const normalizedDate = this.normalizeDate(date);
+        const dateStr = formatDateToYYYYMMDD(normalizedDate);
+        
+        // Query the in-memory map
+        const currencyRates = this.csvRatesMap.get(currency.toUpperCase());
+        if (!currencyRates) {
+            throw new Error(`No CSV rates found for currency ${currency}`);
+        }
+
+        // Try exact date first
+        const dateRates = currencyRates.get(dateStr);
+        if (dateRates && dateRates.length > 0) {
+            const rate = dateRates[0].rate;
+            logger.debug(`Retrieved ${currency}-NOK rate from CSV for ${dateStr}: ${rate}`);
+            
+            // Persist to storage for future use
+            const currencyRate = new CurrencyRate(currency, 'NOK', rate, normalizedDate, 'csv-fallback');
+            await this.rateStorage.add(currencyRate);
+            await this.rateStorage.flush?.();
+            
+            return rate;
+        }
+
+        // If exact date not found, try previous business days (up to 6 days back)
+        // Always store with the original requested date (normalizedDate), not the fallback date
+        const maxRetries = 7; // Loop 6 times (attempts 1-6) for 6 days back
+        let currentDate = new Date(normalizedDate);
+        for (let attempt = 1; attempt < maxRetries; attempt++) {
+            currentDate.setDate(currentDate.getDate() - 1);
+            const previousDateStr = formatDateToYYYYMMDD(currentDate);
+            const previousDateRates = currencyRates.get(previousDateStr);
+            if (previousDateRates && previousDateRates.length > 0) {
+                const rate = previousDateRates[0].rate;
+                logger.info(`Retrieved ${currency}-NOK rate from CSV for ${previousDateStr} (requested: ${dateStr}): ${rate}`);
+                
+                // Persist with original requested date to cache the result for future lookups
+                const currencyRate = new CurrencyRate(currency, 'NOK', rate, normalizedDate, 'csv-fallback');
+                await this.rateStorage.add(currencyRate);
+                await this.rateStorage.flush?.();
+                
+                return rate;
+            }
+        }
+
+        throw new Error(`No CSV rates found for ${currency} on or near ${dateStr}`);
+    }
+
+    private async loadCsvRates(): Promise<void> {
+        const csvFilePath = './data/USDEURGBP_2018_2025_NOK_rates.csv';
+        logger.info(`Loading historical exchange rates from CSV: ${csvFilePath}`);
+
+        try {
+            const data = await fs.readFile(csvFilePath, 'utf-8');
+            const lines = data.split('\n');
+            
+            // Parse semicolon-separated CSV (Norges Bank format)
+            for (let i = 1; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (!line) continue;
+
+                const parts = line.split(';');
+                if (parts.length < 16) continue;
+
+                const baseCurrency = parts[2]; // BASE_CUR
+                const quoteCurrency = parts[4]; // QUOTE_CUR
+                const dateStr = parts[14]; // TIME_PERIOD (YYYY-MM-DD)
+                const rateStr = parts[15]; // OBS_VALUE
+
+                if (quoteCurrency !== 'NOK') continue; // Only interested in *-NOK pairs
+
+                const rate = parseFloat(rateStr);
+                if (isNaN(rate)) continue;
+
+                // Organize by base currency, then date
+                if (!this.csvRatesMap.has(baseCurrency)) {
+                    this.csvRatesMap.set(baseCurrency, new Map());
+                }
+                const currencyMap = this.csvRatesMap.get(baseCurrency)!;
+                if (!currencyMap.has(dateStr)) {
+                    currencyMap.set(dateStr, []);
+                }
+                currencyMap.get(dateStr)!.push({ date: dateStr, rate });
+            }
+
+            this.csvRatesLoaded = true;
+            logger.info(`Loaded exchange rates for ${this.csvRatesMap.size} currencies from CSV`);
+        } catch (error) {
+            logger.error(`Failed to load CSV rates from ${csvFilePath}: ${error}`);
+            throw new Error(`Failed to load historical exchange rates from CSV: ${error}`);
+        }
     }
 }
 

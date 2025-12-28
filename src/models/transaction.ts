@@ -75,6 +75,7 @@ export class Transaction {
             baseSize: this.baseSize,
             price: this.price,
             fee: this.fee,
+            feeCurrency: this.feeCurrency,
             dateTime: this.dateTime.toISOString(),
             sourceTransactionId: this.sourceTransactionId,
             leg: this.leg
@@ -213,9 +214,11 @@ export class Transaction {
         const feeRate = feeConversionRate !== undefined ? feeConversionRate : conversionRate;
         this.taxFee = this.fee * feeRate;
         
-        // Assume fee is in quote currency by default (can be overridden later)
-        if (!this.feeCurrency) {
-            this.feeCurrency = this.quoteCurrency;
+        // Default fee currency to the fiat in the market pair if present; otherwise use quote currency
+        // Only set if fee is present (> 0)
+        if (!this.feeCurrency && (this.fee ?? 0) > 0) {
+            const fiatInPair = isFiat(this.baseCurrency) ? this.baseCurrency : (isFiat(this.quoteCurrency) ? this.quoteCurrency : undefined);
+            this.feeCurrency = fiatInPair || this.quoteCurrency;
         }
     }
 

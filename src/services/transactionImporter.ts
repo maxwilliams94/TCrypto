@@ -15,10 +15,13 @@ export async function loadTransactionData(filePath: string, nativeCurrency: stri
         fs.createReadStream(filePath)
         .pipe(csv())
         .on('headers', (headers) => {
-            for (let reqHeader of ['Id', 'ExchangeId', 'Status', 'Side', 'Market', 'TransactionType', 'Fee', 'FilledQuantity', 'FilledQuote', 'FilledPrice', 'Timestamp'])
-            if (!headers.includes(reqHeader)) {
-                reject(new Error(`${filePath} does not contain ${reqHeader}`));
+            const requiredHeaders = ['Id', 'ExchangeId', 'Status', 'Side', 'Market', 'TransactionType', 'Fee', 'FilledQuantity', 'FilledQuote', 'FilledPrice', 'Timestamp'];
+            for (let reqHeader of requiredHeaders) {
+                if (!headers.includes(reqHeader)) {
+                    reject(new Error(`${filePath} does not contain ${reqHeader}`));
+                }
             }
+            // FeeCurrency is optional but supported if present
         })
         .on('data', (row) => {
             if (row.Status !== 'COMPLETED') return;
@@ -64,6 +67,13 @@ export async function loadTransactionData(filePath: string, nativeCurrency: stri
                 new Date(row.Timestamp),
                 transactionType
             )
+            // Allow explicit fee currency from CSV if provided; otherwise default handled downstream
+            if (row.FeeCurrency && typeof row.FeeCurrency === 'string') {
+                const fc = row.FeeCurrency.trim();
+                if (fc) {
+                    transaction.feeCurrency = fc;
+                }
+            }
             data.push(transaction);
         })
         .on('end', () => {
@@ -342,6 +352,12 @@ async function populateTaxConversionsForImport(
         }
 
         try {
+            // Skip if quote currency is already the tax currency (case-insensitive check)
+            if (transaction.quoteCurrency?.toUpperCase() === taxCurrency?.toUpperCase()) {
+                transaction.setTaxConversion(taxCurrency, 1.0, transaction.dateTime);
+                continue;
+            }
+            
             // Fetch exchange rate for quote currency -> tax currency
             let exchangeRate: number;
             const quoteCurrencyForLookup = mapStablecoinToFiat(transaction.quoteCurrency);
@@ -356,8 +372,31 @@ async function populateTaxConversionsForImport(
                 );
             }
 
-            // Set tax conversion fields
-            transaction.setTaxConversion(taxCurrency, exchangeRate, transaction.dateTime);
+            // Determine effective fee currency only if a non-zero fee exists
+            let feeConversionRate: number | undefined = undefined;
+            let effectiveFeeCurrency: string | undefined = transaction.feeCurrency;
+            if ((transaction.fee ?? 0) > 0 && !effectiveFeeCurrency) {
+                const fiatInPair = isFiat(transaction.baseCurrency) ? transaction.baseCurrency : (isFiat(transaction.quoteCurrency) ? transaction.quoteCurrency : undefined);
+                effectiveFeeCurrency = fiatInPair;
+            }
+
+            if ((transaction.fee ?? 0) > 0 && effectiveFeeCurrency && effectiveFeeCurrency?.toUpperCase() !== transaction.quoteCurrency?.toUpperCase()) {
+                const feeCurrencyForLookup = mapStablecoinToFiat(effectiveFeeCurrency);
+                if (isFiat(effectiveFeeCurrency)) {
+                    feeConversionRate = await exchangeRateService.getCcyNokRate(feeCurrencyForLookup, transaction.dateTime);
+                } else {
+                    feeConversionRate = await exchangeRateService.getCryptoPriceInCurrency(
+                        effectiveFeeCurrency,
+                        taxCurrency,
+                        transaction.dateTime
+                    );
+                }
+                // Record effective fee currency for consistency downstream
+                transaction.feeCurrency = effectiveFeeCurrency;
+            }
+
+            // Set tax conversion fields, using feeConversionRate if available
+            transaction.setTaxConversion(taxCurrency, exchangeRate, transaction.dateTime, feeConversionRate);
             
         } catch (error) {
             logger.warn(
