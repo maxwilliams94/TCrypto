@@ -3,16 +3,16 @@
 TCrypto is a TypeScript/Node service for importing, normalising and reporting on crypto transactions with comprehensive support for different transaction types including staking rewards (CSV import -> repository -> tax/profit reporting endpoints).
 
 Key directories/files to read first:
-- `src/models/transaction.ts` — Enhanced Transaction model with TransactionType enum supporting 'TRADE', 'STAKING_REWARD', 'LENDING_REWARD', 'AIRDROP', 'MINING_REWARD', 'FORK', 'TRANSFER_IN', 'TRANSFER_OUT'. Contains reward-specific fields (validator, epoch, rewardSource).
-- `src/services/transactionImporter.ts` — CSV parsing, strict header validation, and the import flow that may split crypto/crypto trades into two native-currency transactions.
+- `src/models/transaction.ts` — Enhanced Transaction model with TransactionType enum supporting 'TRADE', 'STAKING_REWARD', 'LENDING_REWARD', 'AIRDROP', 'MINING_REWARD', 'FORK', 'TRANSFER_IN', 'TRANSFER_OUT', 'WITHDRAW', 'DEPOSIT'. Contains reward-specific fields (validator, epoch, rewardSource).
+- `src/services/transactionImporter.ts` — CSV parsing, strict header validation, and the import flow that may split crypto/crypto trades into two native-currency transactions. Now imports WITHDRAW/DEPOSIT transactions for fee tracking.
 - `src/services/exchangeRateService.ts` — Enhanced with CoinGecko API integration for crypto price fetching alongside Norges Bank FX rates. Supports historical crypto prices and batch operations.
 - `src/repositories/storage.ts` — `TransactionStorage` interface; implement this to add persistent storage.
 - `src/repositories/file.ts` — file-based JSON persistence (enable with `USE_FILE_STORAGE=true`).
-- `src/services/profitReporter.ts` — tax/profit calculation (FIFO style) that correctly handles reward transactions as BUY transactions.
+- `src/services/profitReporter.ts` — tax/profit calculation (FIFO style) that correctly handles reward transactions as BUY transactions and tracks withdrawal fees as deductible expenses.
 
 ## Big-picture architecture and dataflow
-- **Transaction-centric design**: All crypto activities (trades, staking rewards, airdrops) are unified as `Transaction` objects with different `type` values.
-- CSV files are read by `importInitialTransactions()` in `transactionImporter.ts` (env var `TRANSACTION_DIR` or cwd). Each CSV row becomes a `Transaction` with `type: 'TRADE'`.
+- **Transaction-centric design**: All crypto activities (trades, staking rewards, airdrops, withdrawals, deposits) are unified as `Transaction` objects with different `type` values.
+- CSV files are read by `importInitialTransactions()` in `transactionImporter.ts` (env var `TRANSACTION_DIR` or cwd). Each CSV row becomes a `Transaction` with appropriate type.
 - **Import process**: loads existing transactions from storage first, then processes CSVs and skips duplicates by transaction ID.
 - Crypto/crypto trades are transformed by `splitCryptoCryptoTransaction()` into two transactions: a SELL for the quote currency into the native currency (default NOK) and a BUY of the base currency priced in the native currency.
 - **Dual exchange rate system**: 
@@ -20,6 +20,7 @@ Key directories/files to read first:
   - CoinGecko API for crypto prices via `ExchangeRateService.getCryptoPriceInCurrency(crypto, currency, date)`
   - Both systems cache values with persistent storage support
 - **Reward transactions**: Created as BUY transactions with reward-specific metadata (validator, epoch, rewardSource). Tax reporting treats rewards as taxable income events.
+- **Withdrawal/Deposit transactions**: WITHDRAW and DEPOSIT transactions are imported but don't affect FIFO buy/sell matching. Withdrawal fees are tracked as tax-deductible expenses that reduce net taxable profit.
 - Transactions are stored via the `TransactionStorage` interface with repository pattern. Server exposes unified `/transactions` endpoint with filtering by type, asset, date range.
 
 ## Developer workflows (how to run/build/debug)

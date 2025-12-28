@@ -1,6 +1,6 @@
 
 
-export type TransactionType = 'TRADE' | 'STAKING_REWARD' | 'LENDING_REWARD' | 'AIRDROP' | 'MINING_REWARD' | 'FORK' | 'TRANSFER_IN' | 'TRANSFER_OUT';
+export type TransactionType = 'TRADE' | 'STAKING_REWARD' | 'LENDING_REWARD' | 'AIRDROP' | 'MINING_REWARD' | 'FORK' | 'TRANSFER_IN' | 'TRANSFER_OUT' | 'WITHDRAW' | 'DEPOSIT';
 
 export class Transaction {
     id: string;

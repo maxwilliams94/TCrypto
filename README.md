@@ -156,9 +156,51 @@ When using `/export/tax-report/complete`, four CSV files are generated:
 The tax report endpoint provides detailed information for tax filing:
 
 - **Proper fee handling**: Buy fees are included in cost basis, sell fees reduce profits
+- **Withdrawal fee deductions**: Withdrawal fees are tracked as separate deductible expenses
 - **FIFO cost basis**: Sells are matched against oldest buys first
 - **Detailed sell events**: Each sell includes complete audit trail of matched buys
 - **Comprehensive summary**: Total profit/loss, fees breakdown, number of transactions
+- **Net taxable profit**: Automatically calculates `totalProfit - deductibleFees` for tax reporting
+
+#### Withdrawal Fee Tracking
+
+**WITHDRAW and DEPOSIT transactions are now tracked** for complete tax reporting:
+
+- **WITHDRAW transactions**: Don't create taxable events, but fees are captured as **tax-deductible expenses**
+- **DEPOSIT transactions**: No taxable event, typically no fees
+- **Fee deduction**: Withdrawal fees reduce your net taxable profit
+- **Currency conversion**: Fees are converted to your native currency using historical exchange rates
+
+**Tax Report includes:**
+```json
+{
+  "summary": {
+    "totalProfit": 50000,        // Capital gains from sales
+    "deductibleFees": 1200,      // Withdrawal fees (tax-deductible)
+    "netTaxableProfit": 48800,   // totalProfit - deductibleFees
+    "totalBuyFees": 500,         // Already in cost basis
+    "totalSellFees": 300         // Already deducted from proceeds
+  },
+  "withdrawalEvents": [
+    {
+      "transactionId": "abc-123",
+      "asset": "BTC",
+      "quantity": 0.5,
+      "fee": 0.0001,
+      "feeInTaxCurrency": 50,
+      "withdrawalDate": "2024-06-15T10:30:00Z"
+    }
+  ]
+}
+```
+
+**CSV Format for Withdrawals:**
+```csv
+Id,ExchangeId,Status,Side,Market,TransactionType,Fee,FilledQuantity,FilledQuote,FilledPrice,Timestamp
+w-123,w-123,COMPLETED,,BTC-NOK,WITHDRAWAL,0.0001,0.5,0,0,2024-06-15T10:30:00Z
+```
+
+For detailed documentation on withdrawal fee tracking, see [Withdrawal Fee Tracking](docs/withdrawal-fee-tracking.md).
 
 See [Tax Reporting Documentation](docs/TAX_REPORTING.md) for detailed examples and usage.
 

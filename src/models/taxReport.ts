@@ -34,6 +34,17 @@ export class TaxReport {
     }> = [];
     totalIncome?: number = 0;           // Total income from rewards (in tax currency)
     
+    // Deductible fees from withdrawal transactions (tax-deductible operating expenses)
+    deductibleFees?: number = 0;        // Total fees from WITHDRAW transactions (in tax currency)
+    withdrawalEvents?: Array<{
+        transactionId: string;
+        asset: string;
+        quantity: number;
+        fee: number;                // Fee in original currency
+        feeInTaxCurrency: number;   // Fee converted to tax currency
+        withdrawalDate: Date;
+    }> = [];
+    
     // Portfolio tracking
     portfolio?: Portfolio;
 
@@ -92,12 +103,16 @@ export class TaxReport {
             sellEvents: this.sellEvents?.map(se => se.toJSON()) || [],
             totalBuyFeesIncluded: this.totalBuyFeesIncluded,
             totalSellFees: this.totalSellFees,
+            withdrawalEvents: this.withdrawalEvents || [],
+            deductibleFees: this.deductibleFees,
             portfolio: this.portfolio?.toJSON(),
             summary: {
                 totalProfit: this.profit,
                 totalFees: this.fees,
                 totalBuyFees: this.totalBuyFeesIncluded,
                 totalSellFees: this.totalSellFees,
+                deductibleFees: this.deductibleFees,
+                netTaxableProfit: (this.profit || 0) - (this.deductibleFees || 0),
                 numberOfSells: this.sellEvents?.length || 0,
                 realizedGainLoss: this.portfolio?.getTotalRealizedGainLoss(),
                 unrealizedGainLoss: this.portfolio?.getTotalUnrealizedGainLoss()

@@ -22,8 +22,12 @@ export async function loadTransactionData(filePath: string, nativeCurrency: stri
         })
         .on('data', (row) => {
             if (row.Status !== 'COMPLETED') return;
-            if (row.TransactionType === 'DEPOSIT' || row.TransactionType === 'WITHDRAWAL') return;
+            // Import all transaction types including WITHDRAW and DEPOSIT for fee tracking
             const transactionType = mapTransactionType(row.TransactionType);
+            if (!transactionType) {
+                logger.debug(`Skipping transaction ${row.Id} with unknown type: ${row.TransactionType}`);
+                return;
+            }
             const price = parseFloat(row.FilledPrice) || 0;
             if (!row.Side && transactionType === 'STAKING_REWARD') {
                 row.Side = 'BUY';
@@ -253,7 +257,7 @@ async function fillMissingPrice(transaction: Transaction, nativeCurrency: string
     return { transaction, apiCalled };
 }
 
-function mapTransactionType(type: string): TransactionType {
+function mapTransactionType(type: string): TransactionType | undefined {
     const typeMap: { [key: string]: TransactionType } = {
         'TRADE': 'TRADE',
         'STAKING_REWARD': 'STAKING_REWARD',
@@ -262,7 +266,10 @@ function mapTransactionType(type: string): TransactionType {
         'MINING_REWARD': 'MINING_REWARD',
         'FORK': 'FORK',
         'TRANSFER_IN': 'TRANSFER_IN',
-        'TRANSFER_OUT': 'TRANSFER_OUT'
+        'TRANSFER_OUT': 'TRANSFER_OUT',
+        'WITHDRAW': 'WITHDRAW',
+        'WITHDRAWAL': 'WITHDRAW',  // Support both spellings
+        'DEPOSIT': 'DEPOSIT'
     };
     return typeMap[type];
 }
