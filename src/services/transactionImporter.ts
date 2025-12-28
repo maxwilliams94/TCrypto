@@ -29,12 +29,21 @@ export async function loadTransactionData(filePath: string, nativeCurrency: stri
                 return;
             }
             const price = parseFloat(row.FilledPrice) || 0;
+            
+            // Normalize Side field for different transaction types
             if (!row.Side && transactionType === 'STAKING_REWARD') {
                 row.Side = 'BUY';
             }
+            // Clear Side field for WITHDRAW and DEPOSIT (some exchanges incorrectly set Side="DEPOSIT" or "WITHDRAW")
+            if (transactionType === 'WITHDRAW' || transactionType === 'DEPOSIT') {
+                row.Side = '';
+            }
+            
             let market_parts = row.Market.split('-');
             if (market_parts.length !== 2) {
-                if (row.TransactionType === 'AIRDROP' || row.TransactionType === 'STAKING_REWARD') {
+                // Handle single-asset markets for rewards, deposits, and withdrawals
+                if (row.TransactionType === 'AIRDROP' || row.TransactionType === 'STAKING_REWARD' || 
+                    row.TransactionType === 'DEPOSIT' || row.TransactionType === 'WITHDRAW' || row.TransactionType === 'WITHDRAWAL') {
                     market_parts = [market_parts[0], nativeCurrency];
                 }
                 else {
