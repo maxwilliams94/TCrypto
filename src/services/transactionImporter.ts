@@ -235,8 +235,10 @@ async function fillMissingPrice(transaction: Transaction, nativeCurrency: string
     // Regular TRADE transactions should already have prices from the exchange
     if (!transaction.isReward()) {
         if (!transaction.price || transaction.price <= 0) {
-            logger.warn(`Trade transaction ${transaction.id} is missing price data - this may indicate a CSV data issue`);
+            if (transaction.type != 'DEPOSIT' && transaction.type != 'INTERNAL_TRANSFER' && transaction.type != 'WITHDRAW') {
+            logger.warn(`Trade transaction ${transaction.id} (${transaction.type}) is missing price data - this may indicate a CSV data issue`);
         }
+    }
         return { transaction, apiCalled: false };
     }
 
