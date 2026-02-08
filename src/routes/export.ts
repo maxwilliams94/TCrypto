@@ -153,6 +153,8 @@ exportRouter.get('/tax-report/complete', async (req, res): Promise<void> => {
                 `tax_report_summary_${start}_to_${end}.csv`,
                 `sell_events_${start}_to_${end}.csv`,
                 `sell_event_allocations_${start}_to_${end}.csv`,
+                `portfolio_${start}_to_${end}.csv`,
+                `transactions_${start}_to_${end}.csv`,
                 `portfolio_${start}_to_${end}.csv`
             ],
             stats: {

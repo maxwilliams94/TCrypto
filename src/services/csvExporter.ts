@@ -245,6 +245,75 @@ export async function exportTaxReportSummaryToCSV(
 }
 
 /**
+ * Export all transactions involved in the tax period (buys, sells, and supporting transactions)
+ */
+export async function exportTransactionListToCSV(
+    transactions: Transaction[],
+    taxReport: TaxReport,
+    outputPath: string
+): Promise<void> {
+    const headers = [
+        'Date',
+        'ID',
+        'Type',
+        'Side',
+        'Market',
+        'Exchange',
+        'Base Size',
+        'Base Currency',
+        'Quote Size',
+        'Quote Currency',
+        'Price',
+        'Fee',
+        'Fee Currency',
+        'Tax Price',
+        'Tax Quote Size',
+        'Tax Fee',
+        'Tax Currency',
+        'In-Scope',
+        'Source TX ID',
+        'Leg',
+        'Reward Source',
+        'Income Value'
+    ];
+
+    const rows: string[][] = [];
+
+    for (const tx of transactions) {
+        const isInScope = tx.dateTime >= taxReport.startDate && tx.dateTime <= taxReport.endDate;
+        
+        rows.push([
+            tx.dateTime.toISOString().split('T')[0],
+            tx.id,
+            tx.type,
+            tx.side,
+            `${tx.baseCurrency}-${tx.quoteCurrency}`,
+            tx.exchange,
+            tx.baseSize.toFixed(8),
+            tx.baseCurrency,
+            tx.quoteSize.toFixed(8),
+            tx.quoteCurrency,
+            tx.price.toFixed(8),
+            (tx.fee ?? 0).toFixed(8),
+            tx.feeCurrency || '',
+            (tx.taxPrice ?? 'N/A').toString(),
+            (tx.taxQuoteSize ?? 'N/A').toString(),
+            (tx.taxFee ?? 'N/A').toString(),
+            tx.taxCurrency || '',
+            isInScope ? 'YES' : 'NO',
+            tx.sourceTransactionId || '',
+            tx.leg || '',
+            tx.rewardSource || '',
+            (tx.incomeValue ?? '').toString()
+        ]);
+    }
+
+    const csv = arrayToCSV(headers, rows);
+    await fs.writeFile(outputPath, csv, 'utf-8');
+    logger.info(`Exported ${transactions.length} transactions to ${outputPath}`);
+}
+
+/**
  * Export all tax report data to multiple CSV files in a directory
  */
 export async function exportTaxReportComplete(
@@ -284,6 +353,15 @@ export async function exportTaxReportComplete(
         await exportPortfolioToCSV(
             taxReport,
             `${outputDir}/portfolio_${period}.csv`
+        );
+    }
+
+    // Export all transactions involved in the tax calculation
+    if (transactions) {
+        await exportTransactionListToCSV(
+            transactions,
+            taxReport,
+            `${outputDir}/transactions_${period}.csv`
         );
     }
 
