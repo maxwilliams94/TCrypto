@@ -298,46 +298,92 @@ async function expandTransactionsForAccounting(
             const basePriceNative = original.taxPrice ?? (original.price * quoteToNative);
             const feeNative = original.getTaxFee();
 
-            const sellTx = new Transaction(
-                `${original.id}#quote-sell`,
-                original.quoteCurrency,
-                nativeCurrency,
-                original.exchange,
-                'SELL',
-                original.quoteSize,
-                quoteValueNative,
-                quoteToNative,
-                0,
-                original.dateTime,
-                original.type,
-            );
-            sellTx.processingSequence = sequence++;
-            sellTx.sourceTransactionId = original.id;
-            sellTx.leg = 'QUOTE';
-            sellTx.setTaxConversion(nativeCurrency, 1, original.dateTime);
+            // For BUY: you spend quote and receive base → SELL quote, BUY base
+            // For SELL: you spend base and receive quote → SELL base, BUY quote
+            let leg1: Transaction;
+            let leg2: Transaction;
 
-            const buyTx = new Transaction(
-                `${original.id}#base-buy`,
-                original.baseCurrency,
-                nativeCurrency,
-                original.exchange,
-                'BUY',
-                original.baseSize,
-                quoteValueNative,
-                basePriceNative,
-                feeNative,
-                original.dateTime,
-                original.type,
-            );
-            buyTx.processingSequence = sequence++;
-            buyTx.sourceTransactionId = original.id;
-            buyTx.leg = 'BASE';
-            buyTx.setTaxConversion(nativeCurrency, 1, original.dateTime);
-            buyTx.feeCurrency = nativeCurrency;
+            if (original.side === 'BUY') {
+                // BUY BASE-QUOTE: spend QUOTE, get BASE
+                leg1 = new Transaction(
+                    `${original.id}#quote-sell`,
+                    original.quoteCurrency,
+                    nativeCurrency,
+                    original.exchange,
+                    'SELL',
+                    original.quoteSize,
+                    quoteValueNative,
+                    quoteToNative,
+                    0,
+                    original.dateTime,
+                    original.type,
+                );
+                leg1.processingSequence = sequence++;
+                leg1.sourceTransactionId = original.id;
+                leg1.leg = 'QUOTE';
+                leg1.setTaxConversion(nativeCurrency, 1, original.dateTime);
+
+                leg2 = new Transaction(
+                    `${original.id}#base-buy`,
+                    original.baseCurrency,
+                    nativeCurrency,
+                    original.exchange,
+                    'BUY',
+                    original.baseSize,
+                    quoteValueNative,
+                    basePriceNative,
+                    feeNative,
+                    original.dateTime,
+                    original.type,
+                );
+                leg2.processingSequence = sequence++;
+                leg2.sourceTransactionId = original.id;
+                leg2.leg = 'BASE';
+                leg2.setTaxConversion(nativeCurrency, 1, original.dateTime);
+                leg2.feeCurrency = nativeCurrency;
+            } else {
+                // SELL BASE-QUOTE: spend BASE, get QUOTE
+                leg1 = new Transaction(
+                    `${original.id}#base-sell`,
+                    original.baseCurrency,
+                    nativeCurrency,
+                    original.exchange,
+                    'SELL',
+                    original.baseSize,
+                    quoteValueNative,
+                    basePriceNative,
+                    feeNative,
+                    original.dateTime,
+                    original.type,
+                );
+                leg1.processingSequence = sequence++;
+                leg1.sourceTransactionId = original.id;
+                leg1.leg = 'BASE';
+                leg1.setTaxConversion(nativeCurrency, 1, original.dateTime);
+                leg1.feeCurrency = nativeCurrency;
+
+                leg2 = new Transaction(
+                    `${original.id}#quote-buy`,
+                    original.quoteCurrency,
+                    nativeCurrency,
+                    original.exchange,
+                    'BUY',
+                    original.quoteSize,
+                    quoteValueNative,
+                    quoteToNative,
+                    0,
+                    original.dateTime,
+                    original.type,
+                );
+                leg2.processingSequence = sequence++;
+                leg2.sourceTransactionId = original.id;
+                leg2.leg = 'QUOTE';
+                leg2.setTaxConversion(nativeCurrency, 1, original.dateTime);
+            }
             logger.debug(`Created synthetic 
-                SELL ${sellTx.id} (${sellTx.baseCurrency}-${sellTx.quoteCurrency}) and 
-                BUY  ${buyTx.id} (${buyTx.baseCurrency}-${buyTx.quoteCurrency}) for accounting`);
-            expanded.push(sellTx, buyTx);
+                ${leg1.side} ${leg1.id} (${leg1.baseCurrency}-${leg1.quoteCurrency}) and 
+                ${leg2.side} ${leg2.id} (${leg2.baseCurrency}-${leg2.quoteCurrency}) for accounting`);
+            expanded.push(leg1, leg2);
         } else {
             original.processingSequence = sequence++;
             original.leg = 'ORIGINAL';

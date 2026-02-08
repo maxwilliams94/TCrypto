@@ -37,7 +37,7 @@ export async function loadTransactionData(filePath: string, nativeCurrency: stri
             if (!row.Side && transactionType === 'STAKING_REWARD') {
                 row.Side = 'BUY';
             }
-            // Clear Side field for WITHDRAW and DEPOSIT (some exchanges incorrectly set Side="DEPOSIT" or "WITHDRAW")
+            // Clear Side field for WITHDRAW and DEPOSIT
             if (transactionType === 'WITHDRAW' || transactionType === 'DEPOSIT') {
                 row.Side = '';
             }
@@ -46,7 +46,7 @@ export async function loadTransactionData(filePath: string, nativeCurrency: stri
             if (market_parts.length !== 2) {
                 // Handle single-asset markets for rewards, deposits, and withdrawals
                 if (row.TransactionType === 'AIRDROP' || row.TransactionType === 'STAKING_REWARD' || 
-                    row.TransactionType === 'DEPOSIT' || row.TransactionType === 'WITHDRAW' || row.TransactionType === 'WITHDRAWAL') {
+                    row.TransactionType === 'DEPOSIT' || row.TransactionType === 'WITHDRAW') {
                     market_parts = [market_parts[0], nativeCurrency];
                 }
                 else {
