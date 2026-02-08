@@ -9,9 +9,34 @@ import {
     exportTaxReportComplete
 } from '../services/csvExporter';
 import { CurrencyRateMemoryRepository } from '../repositories/currencyRateMemory';
+import { ExchangeRateService } from '../services/exchangeRateService';
+import { Portfolio } from '../models/portfolio';
+import logger from '../logger';
 import path from 'path';
 
 const exportRouter = express.Router();
+
+async function updatePortfolioMarketValues(
+    portfolio: Portfolio,
+    nativeCurrency: string,
+    asOfDate: Date,
+    currencyRateRepo: CurrencyRateMemoryRepository
+): Promise<void> {
+    const exchangeRateService = new ExchangeRateService(currencyRateRepo);
+
+    for (const position of portfolio.getAllPositions(false)) {
+        try {
+            const currentPrice = await exchangeRateService.getCryptoPriceInCurrency(
+                position.asset,
+                nativeCurrency,
+                asOfDate
+            );
+            position.updateMarketValue(currentPrice);
+        } catch (error: any) {
+            logger.warn(`Failed to fetch price for ${position.asset}: ${error?.message || error}`);
+        }
+    }
+}
 
 /**
  * GET /export/transactions/csv
@@ -71,6 +96,15 @@ exportRouter.get('/tax-report/complete', async (req, res): Promise<void> => {
             'FIFO',
             currencyRateRepo
         );
+
+        if (taxReport.portfolio) {
+            await updatePortfolioMarketValues(
+                taxReport.portfolio,
+                currency as string,
+                endDate,
+                currencyRateRepo
+            );
+        }
 
         // Export to directory
         const outputDir = path.resolve(process.cwd(), 'exports/tax-reports');
@@ -184,6 +218,13 @@ exportRouter.get('/tax-report/portfolio', async (req, res): Promise<void> => {
             });
             return;
         }
+
+        await updatePortfolioMarketValues(
+            taxReport.portfolio,
+            currency as string,
+            endDate,
+            currencyRateRepo
+        );
 
         const outputPath = path.resolve(process.cwd(), `exports/portfolio_${start}_to_${end}.csv`);
         await exportPortfolioToCSV(taxReport, outputPath);

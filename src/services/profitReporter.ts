@@ -46,11 +46,8 @@ export async function generateTaxReport(
         inScope(transaction.dateTime, periodStart, periodEnd)
     );
 
-    // Always initialize startDate to periodStart; overwrite if transactions exist
+    // Always use the requested tax period for report metadata
     taxReport.startDate = periodStart;
-    if (transactionHistory.length > 0) {
-        taxReport.startDate = transactionHistory[0].dateTime;
-    }
 
     // Initialize portfolio tracking
     const portfolio = new Portfolio(nativeCurrency);
