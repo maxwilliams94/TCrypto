@@ -111,11 +111,13 @@ export async function exportSellEventAllocationsToCSV(
     const headers = [
         'Sell Date',
         'Sell ID',
+        'Sell Exchange',
         'Asset',
         'Sell Quantity',
         'Sell Price',
         'Buy Date',
         'Buy ID',
+        'Buy Exchange',
         'Buy Quantity',
         'Buy Price',
         'Allocation Quantity',
@@ -131,15 +133,20 @@ export async function exportSellEventAllocationsToCSV(
             const buyTx = transactions?.find(t => t.id === allocation.buyTransactionId);
             const buyFee = buyTx ? 
                 (allocation.quantity / buyTx.baseSize) * buyTx.getTaxFee() : 0;
+            
+            // Find the sell transaction to get its exchange
+            const sellTx = transactions?.find(t => t.id === event.sellTransactionId);
 
             rows.push([
                 event.sellDate.toISOString().split('T')[0],
                 event.sellTransactionId,
+                sellTx?.exchange || 'Unknown',
                 event.asset,
                 event.totalQuantity.toFixed(8),
                 event.sellPrice.toFixed(2),
                 buyTx?.dateTime.toISOString().split('T')[0] || 'Unknown',
                 allocation.buyTransactionId,
+                buyTx?.exchange || 'Unknown',
                 buyTx?.baseSize.toFixed(8) || 'Unknown',
                 buyTx?.getTaxPrice().toFixed(2) || 'Unknown',
                 allocation.quantity.toFixed(8),

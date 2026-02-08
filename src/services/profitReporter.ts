@@ -13,6 +13,7 @@ interface BuyPosition {
     transaction: Transaction;
     index: number;
     remainingQuantity: number;
+    effectiveBaseSize: number;
 }
 
 export async function generateTaxReport(
@@ -63,6 +64,7 @@ export async function generateTaxReport(
     for (let i: number = 0; i < accountingTransactions.length; i++) {
         const t = accountingTransactions[i];
         const isInScope = inScope(t.dateTime, periodStart, periodEnd);
+        const baseFeeQuantity = getBaseFeeQuantity(t);
         
         logger.debug(`${i} ${JSON.stringify(t.toSimpleJSON())} inscope: ${isInScope}`);
         
@@ -125,6 +127,8 @@ export async function generateTaxReport(
         
         if (t.side === 'BUY') {
             if (isInScope) taxReport.buys!++;
+
+            const buyQuantity = Math.max(t.baseSize - baseFeeQuantity, 0);
             
             // Add this buy to the position queue for FIFO matching
             if (!buyPositions.has(t.baseCurrency)) {
@@ -133,7 +137,8 @@ export async function generateTaxReport(
             buyPositions.get(t.baseCurrency)!.push({
                 transaction: t,
                 index: i,
-                remainingQuantity: t.baseSize
+                remainingQuantity: buyQuantity,
+                effectiveBaseSize: buyQuantity
             });
             
             logger.debug(`Added buy position for ${t.baseCurrency}: ${t.baseSize} units at index ${i}`);
@@ -148,7 +153,7 @@ export async function generateTaxReport(
                     ? t.taxQuoteSize
                     : (t.quoteSize * (t.taxConversionRate ?? 1));
                 const pricePerUnitFromQuote = t.baseSize > 0 ? (taxQuoteSize / t.baseSize) : t.getTaxPrice();
-                position.addBuy(t.baseSize, pricePerUnitFromQuote, t.getTaxFee(), isInScope);
+                position.addBuy(buyQuantity, pricePerUnitFromQuote, t.getTaxFee(), isInScope);
             }
         } else if (t.side === 'SELL') {
             if (isInScope) taxReport.sells!++;
@@ -181,7 +186,9 @@ export async function generateTaxReport(
                 
                 // Calculate proportional fee for this allocation
                 // If we're using 50% of the buy, we include 50% of the buy fee in the cost basis
-                const proportionOfBuy = quantityToAllocate / buyPosition.transaction.baseSize;
+                const proportionOfBuy = buyPosition.effectiveBaseSize > 0
+                    ? (quantityToAllocate / buyPosition.effectiveBaseSize)
+                    : 0;
                 const allocatedBuyFee = buyPosition.transaction.getTaxFee() * proportionOfBuy;
 
                 // Cost basis should use quoteSize (total amount spent) in tax currency
@@ -264,6 +271,27 @@ export async function generateTaxReport(
                     );
                 }
             }
+
+            // If fee is charged in the asset itself, subtract it from holdings using FIFO
+            if (baseFeeQuantity > 0 && asset !== nativeCurrency) {
+                const positionsForFee = buyPositions.get(asset);
+                if (positionsForFee && positionsForFee.length > 0) {
+                    const feeCostBasis = consumeQuantityFromPositions(positionsForFee, baseFeeQuantity);
+                    // Add the fee cost in tax currency on top of the FIFO cost basis
+                    const totalFeeCost = feeCostBasis + t.getTaxFee();
+                    const position = portfolio.getPosition(asset);
+                    position.addSell(
+                        baseFeeQuantity,
+                        0,
+                        totalFeeCost,
+                        0,
+                        0,
+                        false
+                    );
+                } else {
+                    logger.warn(`No buy found before fee deduction of ${baseFeeQuantity} ${asset} for transaction ${t.id}.`);
+                }
+            }
         }
         if (logger.isDebugEnabled()) {
             logger.debug(`Portfolio after processing transaction ${t.id}:\n${mapToJSONString(calculateTotalPositionsPerAsset(buyPositions))}`);
@@ -275,6 +303,50 @@ export async function generateTaxReport(
 
 function inScope(date: Date, startDate: Date, endDate: Date): boolean {
     return date >= startDate && date <= endDate;
+}
+
+function getBaseFeeQuantity(transaction: Transaction): number {
+    if ((transaction.fee ?? 0) <= 0) {
+        return 0;
+    }
+    if (!transaction.feeCurrency) {
+        return 0;
+    }
+    return transaction.feeCurrency.toUpperCase() === transaction.baseCurrency.toUpperCase()
+        ? transaction.fee
+        : 0;
+}
+
+function consumeQuantityFromPositions(positions: BuyPosition[], quantity: number): number {
+    let remainingToConsume = quantity;
+    let totalCostBasis = 0;
+
+    while (remainingToConsume > 0 && positions.length > 0) {
+        const buyPosition = positions[0];
+        const quantityToConsume = Math.min(buyPosition.remainingQuantity, remainingToConsume);
+
+        const proportionOfBuy = buyPosition.effectiveBaseSize > 0
+            ? (quantityToConsume / buyPosition.effectiveBaseSize)
+            : 0;
+        const allocatedBuyFee = buyPosition.transaction.getTaxFee() * proportionOfBuy;
+        const buyTaxQuoteSize =
+            (buyPosition.transaction.taxQuoteSize !== undefined)
+                ? buyPosition.transaction.taxQuoteSize
+                : (buyPosition.transaction.quoteSize * (buyPosition.transaction.taxConversionRate ?? 1));
+        const allocatedQuoteValue = buyTaxQuoteSize * proportionOfBuy;
+        const costBasis = allocatedQuoteValue + allocatedBuyFee;
+
+        totalCostBasis += costBasis;
+
+        buyPosition.remainingQuantity -= quantityToConsume;
+        remainingToConsume -= quantityToConsume;
+
+        if (buyPosition.remainingQuantity <= 0.00000000001) {
+            positions.shift();
+        }
+    }
+
+    return totalCostBasis;
 }
 
 async function expandTransactionsForAccounting(

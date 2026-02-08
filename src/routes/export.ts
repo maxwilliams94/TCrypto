@@ -38,6 +38,33 @@ async function updatePortfolioMarketValues(
     }
 }
 
+function getPortfolioDustThreshold(currency: string): number {
+    switch (currency.toUpperCase()) {
+        case 'USD':
+        case 'EUR':
+            return 0.1;
+        case 'NOK':
+            return 1;
+        default:
+            return 1;
+    }
+}
+
+function applyPortfolioDustThreshold(portfolio: Portfolio, valueThreshold: number): void {
+    for (const position of portfolio.positions.values()) {
+        const value = position.currentValue ?? 0;
+        logger.debug(`Checking if position for asset ${position.asset} with quantity ${position.totalQuantity} and current value ${value} is below dust threshold of ${valueThreshold}`);
+        if (Math.abs(value) < valueThreshold) {
+            logger.debug(`Applying dust threshold, zeroing position for asset ${position.asset}`);
+            position.totalQuantity = 0;
+            position.totalCostBasis = 0;
+            position.averageCostBasis = 0;
+            position.currentValue = 0;
+            position.unrealizedGainLoss = 0;
+        }
+    }
+}
+
 /**
  * GET /export/transactions/csv
  * Export all transactions to CSV
@@ -103,6 +130,11 @@ exportRouter.get('/tax-report/complete', async (req, res): Promise<void> => {
                 currency as string,
                 endDate,
                 currencyRateRepo
+            );
+
+            applyPortfolioDustThreshold(
+                taxReport.portfolio,
+                getPortfolioDustThreshold(currency as string)
             );
         }
 
@@ -224,6 +256,11 @@ exportRouter.get('/tax-report/portfolio', async (req, res): Promise<void> => {
             currency as string,
             endDate,
             currencyRateRepo
+        );
+
+        applyPortfolioDustThreshold(
+            taxReport.portfolio,
+            getPortfolioDustThreshold(currency as string)
         );
 
         const outputPath = path.resolve(process.cwd(), `exports/portfolio_${start}_to_${end}.csv`);
