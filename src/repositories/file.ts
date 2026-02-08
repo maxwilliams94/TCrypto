@@ -163,9 +163,7 @@ export class FileRepository implements TransactionStorage {
             .map(t => {
                 const filledQuoteNumber = t.isReward()
                     ? (t.getIncomeValueInTaxCurrency() || t.getIncomeValue() || 0)
-                    : (t.taxQuoteSize !== undefined
-                        ? t.taxQuoteSize
-                        : ((t.quoteSize ?? 0) * (t.taxConversionRate ?? 1)));
+                    : t.quoteSize;
                 return [
                     t.id || '',
                     'FILLED', // Assuming all stored transactions are filled
