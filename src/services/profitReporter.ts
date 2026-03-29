@@ -5,15 +5,28 @@ import { CurrencyRateStorage } from "../repositories/currencyRateStorage";
 import { SellEvent, BuyAllocation } from "../models/sellEvent";
 import { Portfolio } from "../models/portfolio";
 import { ExchangeRateService } from "./exchangeRateService";
+import {
+    AccountingStrategy,
+    BuyLot,
+    LotSelectionContext,
+    calculateCostBasisPerUnit,
+    calculateProportionalCostBasis,
+    resolveStrategy
+} from "./accountingStrategy";
 
 /**
- * Represents a buy transaction and how much of it remains available for FIFO matching
+ * Re-export BuyLot as the position type used internally.
+ * Previously this was a local BuyPosition interface; now it's the shared BuyLot
+ * from accountingStrategy.ts so strategies can operate on it.
  */
-interface BuyPosition {
-    transaction: Transaction;
-    index: number;
-    remainingQuantity: number;
-    effectiveBaseSize: number;
+type BuyPosition = BuyLot;
+
+export interface TaxReportOptions {
+    /** Accounting method to use for lot selection (default: 'FIFO') */
+    accountingMethod?: string;
+    /** When true, lot consumption is recorded on buy transactions for persistence.
+     *  When false (default), the report is a preview — no mutations are saved. */
+    finalise?: boolean;
 }
 
 export async function generateTaxReport(
@@ -21,10 +34,19 @@ export async function generateTaxReport(
     nativeCurrency: string, 
     periodStart: Date, 
     periodEnd: Date, 
-    accountingMethod: string = 'FIFO',
+    accountingMethodOrOptions: string | TaxReportOptions = 'FIFO',
     currencyRateStorage: CurrencyRateStorage
 ): Promise<TaxReport> {
-    const taxReport = new TaxReport(periodStart, periodEnd, nativeCurrency, accountingMethod);
+    // Support both legacy string and new options object
+    const options: TaxReportOptions = typeof accountingMethodOrOptions === 'string'
+        ? { accountingMethod: accountingMethodOrOptions }
+        : accountingMethodOrOptions;
+    const accountingMethod = options.accountingMethod || 'FIFO';
+    const finalise = options.finalise === true;
+
+    const strategy: AccountingStrategy = resolveStrategy(accountingMethod);
+    const taxReport = new TaxReport(periodStart, periodEnd, nativeCurrency, strategy.name);
+    taxReport.isFinalised = finalise;
 
     const exchangeRateService = new ExchangeRateService(currencyRateStorage);
 
@@ -130,15 +152,23 @@ export async function generateTaxReport(
 
             const buyQuantity = Math.max(t.baseSize - baseFeeQuantity, 0);
             
-            // Add this buy to the position queue for FIFO matching
+            // Add this buy to the position queue for lot matching
             if (!buyPositions.has(t.baseCurrency)) {
                 buyPositions.set(t.baseCurrency, []);
             }
+
+            // Build enriched BuyLot with pre-computed cost basis fields
+            const cbPerUnit = buyQuantity > 0 ? calculateCostBasisPerUnit(t) : 0;
+            const taxFeePerUnit = buyQuantity > 0 ? (t.getTaxFee() / buyQuantity) : 0;
+
             buyPositions.get(t.baseCurrency)!.push({
                 transaction: t,
                 index: i,
                 remainingQuantity: buyQuantity,
-                effectiveBaseSize: buyQuantity
+                effectiveBaseSize: buyQuantity,
+                costBasisPerUnit: cbPerUnit,
+                totalRemainingCostBasis: cbPerUnit * buyQuantity,
+                buyFeePerUnit: taxFeePerUnit,
             });
             
             logger.debug(`Added buy position for ${t.baseCurrency}: ${t.baseSize} units at index ${i}`);
@@ -164,7 +194,7 @@ export async function generateTaxReport(
                 continue;
             }
             
-            // Create a sell event to track this sell and its FIFO matching
+            // Create a sell event to track this sell and its lot matching
             const sellEvent = new SellEvent(
                 t.id,
                 t.dateTime,
@@ -176,28 +206,38 @@ export async function generateTaxReport(
                 t.getTaxFee()
             );
             
-            // Match this sell against buy positions using FIFO
-            let remainingToSell = t.baseSize;
+            // Use the accounting strategy to determine lot consumption order
             const positions = buyPositions.get(asset)!;
+            const selectionContext: LotSelectionContext = {
+                sellPricePerUnit: t.getTaxPrice(),
+                sellQuantity: t.baseSize,
+                sellFee: t.getTaxFee(),
+                cumulativeGainThisPeriod: taxReport.profit || 0,
+                deductibleFeesThisPeriod: taxReport.deductibleFees || 0,
+                nativeCurrency
+            };
             
-            while (remainingToSell > 0 && positions.length > 0) {
-                const buyPosition = positions[0];
+            const selectionResult = strategy.selectLots(positions, selectionContext);
+            logger.debug(`Lot selection (${strategy.name}): ${selectionResult.selectionReason}`);
+            
+            // Match this sell against buy positions in the strategy-determined order
+            let remainingToSell = t.baseSize;
+            
+            for (const selectedLot of selectionResult.orderedLots) {
+                if (remainingToSell <= 0.00000000001) break;
+                
+                // Find the actual position in our mutable positions array
+                // (the strategy returns copies, we need to mutate the originals)
+                const positionIdx = positions.findIndex(p => p.index === selectedLot.index);
+                if (positionIdx === -1) continue;
+                const buyPosition = positions[positionIdx];
+                if (buyPosition.remainingQuantity <= 0.00000000001) continue;
+                
                 const quantityToAllocate = Math.min(buyPosition.remainingQuantity, remainingToSell);
                 
-                // Calculate proportional fee for this allocation
-                // If we're using 50% of the buy, we include 50% of the buy fee in the cost basis
-                const proportionOfBuy = buyPosition.effectiveBaseSize > 0
-                    ? (quantityToAllocate / buyPosition.effectiveBaseSize)
-                    : 0;
-                const allocatedBuyFee = buyPosition.transaction.getTaxFee() * proportionOfBuy;
-
-                // Cost basis should use quoteSize (total amount spent) in tax currency
-                const buyTaxQuoteSize =
-                    (buyPosition.transaction.taxQuoteSize !== undefined)
-                        ? buyPosition.transaction.taxQuoteSize
-                        : (buyPosition.transaction.quoteSize * (buyPosition.transaction.taxConversionRate ?? 1));
-                const allocatedQuoteValue = buyTaxQuoteSize * proportionOfBuy;
-                const costBasis = allocatedQuoteValue + allocatedBuyFee;
+                // Calculate proportional cost basis using the shared helper
+                const { costBasis, allocatedQuoteValue, allocatedBuyFee } = 
+                    calculateProportionalCostBasis(buyPosition, quantityToAllocate);
                 
                 const allocation: BuyAllocation = {
                     buyTransactionId: buyPosition.transaction.id,
@@ -207,19 +247,32 @@ export async function generateTaxReport(
                 
                 sellEvent.addBuyAllocation(allocation, allocatedBuyFee);
                 
+                // Record lot consumption on the buy transaction only when finalising
+                if (finalise) {
+                    buyPosition.transaction.recordLotConsumption(
+                        t.id,
+                        quantityToAllocate,
+                        costBasis,
+                        allocatedBuyFee,
+                        t.dateTime,
+                        strategy.name
+                    );
+                }
+                
                 logger.debug(
-                    `FIFO match: Selling ${quantityToAllocate} ${asset} ` +
+                    `${strategy.name} match: Selling ${quantityToAllocate} ${asset} ` +
                     `from buy ${buyPosition.transaction.id} at ${buyPosition.transaction.dateTime.toISOString()} ` +
                     `(allocated quote: ${allocatedQuoteValue.toFixed(8)}, buy fee: ${allocatedBuyFee.toFixed(2)}, cost basis: ${costBasis.toFixed(2)})`
                 );
                 
                 // Update remaining quantities
                 buyPosition.remainingQuantity -= quantityToAllocate;
+                buyPosition.totalRemainingCostBasis = buyPosition.costBasisPerUnit * buyPosition.remainingQuantity;
                 remainingToSell -= quantityToAllocate;
                 
                 // Remove buy position if fully consumed
-                if (buyPosition.remainingQuantity <= 0.00000000001) { // Use small epsilon for floating point comparison
-                    positions.shift();
+                if (buyPosition.remainingQuantity <= 0.00000000001) {
+                    positions.splice(positionIdx, 1);
                     logger.debug(`${buyPosition.transaction.baseCurrency} buy position fully consumed, removed from queue`);
                 }
             }
@@ -325,20 +378,11 @@ function consumeQuantityFromPositions(positions: BuyPosition[], quantity: number
         const buyPosition = positions[0];
         const quantityToConsume = Math.min(buyPosition.remainingQuantity, remainingToConsume);
 
-        const proportionOfBuy = buyPosition.effectiveBaseSize > 0
-            ? (quantityToConsume / buyPosition.effectiveBaseSize)
-            : 0;
-        const allocatedBuyFee = buyPosition.transaction.getTaxFee() * proportionOfBuy;
-        const buyTaxQuoteSize =
-            (buyPosition.transaction.taxQuoteSize !== undefined)
-                ? buyPosition.transaction.taxQuoteSize
-                : (buyPosition.transaction.quoteSize * (buyPosition.transaction.taxConversionRate ?? 1));
-        const allocatedQuoteValue = buyTaxQuoteSize * proportionOfBuy;
-        const costBasis = allocatedQuoteValue + allocatedBuyFee;
-
+        const { costBasis } = calculateProportionalCostBasis(buyPosition, quantityToConsume);
         totalCostBasis += costBasis;
 
         buyPosition.remainingQuantity -= quantityToConsume;
+        buyPosition.totalRemainingCostBasis = buyPosition.costBasisPerUnit * buyPosition.remainingQuantity;
         remainingToConsume -= quantityToConsume;
 
         if (buyPosition.remainingQuantity <= 0.00000000001) {

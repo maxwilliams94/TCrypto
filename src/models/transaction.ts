@@ -1,5 +1,26 @@
 
 
+/**
+ * Records a single allocation of a buy lot to a sell transaction.
+ * Used to track lot consumption for audit trail and year-over-year correctness.
+ */
+export interface LotAllocationRecord {
+    /** The sell transaction ID that consumed this portion */
+    sellTransactionId: string;
+    /** Quantity consumed from this buy lot */
+    quantity: number;
+    /** Cost basis allocated (in tax currency) */
+    costBasis: number;
+    /** Proportional buy fee included (in tax currency) */
+    buyFee: number;
+    /** Date of the sell transaction */
+    sellDate: Date;
+    /** Tax year of the sell */
+    taxYear: number;
+    /** Strategy that produced this allocation */
+    strategy: string;
+}
+
 export type TransactionType = 'TRADE' | 'STAKING_REWARD' | 'LENDING_REWARD' | 'AIRDROP' | 'MINING_REWARD' | 'FORK' | 'INTERNAL_TRANSFER' | 'WITHDRAW' | 'DEPOSIT';
 
 export class Transaction {
@@ -37,6 +58,15 @@ export class Transaction {
     incomeValueInTaxCurrency?: number; // Income value converted to tax currency
     incomeConversionRate?: number;  // Exchange rate used to convert income value to tax currency
     incomeDate?: Date;              // Date when the income was realized (usually same as dateTime for rewards)
+    
+    // Lot consumption tracking (for BUY transactions consumed by sells)
+    // These fields record how much of this buy has been allocated to sell events,
+    // ensuring lots can't be double-counted across tax years when strategies change.
+    lotConsumedQuantity?: number;       // Total quantity consumed by sell allocations
+    lotRemainingQuantity?: number;      // Remaining unconsumed quantity
+    lotAllocations?: LotAllocationRecord[];  // Detailed record of each sell that consumed part of this lot
+    lotFullyConsumed?: boolean;         // True when all quantity has been allocated to sells
+    lotConsumptionStrategy?: string;    // Which accounting strategy was used (e.g., 'FIFO')
     
 
     constructor(
@@ -104,6 +134,20 @@ export class Transaction {
         // Add income tracking in tax currency if available
         if (this.incomeValueInTaxCurrency !== undefined) {
             baseInfo['incomeValueInTaxCurrency'] = this.incomeValueInTaxCurrency;
+        }
+
+        // Add lot consumption tracking if present
+        if (this.lotConsumedQuantity !== undefined) {
+            Object.assign(baseInfo, {
+                lotConsumedQuantity: this.lotConsumedQuantity,
+                lotRemainingQuantity: this.lotRemainingQuantity,
+                lotFullyConsumed: this.lotFullyConsumed,
+                lotConsumptionStrategy: this.lotConsumptionStrategy,
+                lotAllocations: this.lotAllocations?.map(a => ({
+                    ...a,
+                    sellDate: a.sellDate instanceof Date ? a.sellDate.toISOString() : a.sellDate
+                }))
+            });
         }
 
         return baseInfo;
@@ -241,6 +285,64 @@ export class Transaction {
      */
     getTaxFee(): number {
         return this.taxFee !== undefined ? this.taxFee : this.fee;
+    }
+
+    // --- Lot consumption tracking methods ---
+
+    /**
+     * Record that a portion of this buy lot was consumed by a sell event.
+     * Updates the consumed/remaining quantities and adds an allocation record.
+     */
+    recordLotConsumption(
+        sellTransactionId: string,
+        quantity: number,
+        costBasis: number,
+        buyFee: number,
+        sellDate: Date,
+        strategy: string
+    ): void {
+        if (!this.lotAllocations) {
+            this.lotAllocations = [];
+            this.lotConsumedQuantity = 0;
+            this.lotRemainingQuantity = this.baseSize;
+        }
+
+        this.lotAllocations.push({
+            sellTransactionId,
+            quantity,
+            costBasis,
+            buyFee,
+            sellDate,
+            taxYear: sellDate.getFullYear(),
+            strategy
+        });
+
+        this.lotConsumedQuantity = (this.lotConsumedQuantity || 0) + quantity;
+        this.lotRemainingQuantity = Math.max(0, (this.lotRemainingQuantity ?? this.baseSize) - quantity);
+        this.lotFullyConsumed = this.lotRemainingQuantity <= 0.00000000001;
+        this.lotConsumptionStrategy = strategy;
+    }
+
+    /**
+     * Get the remaining unconsumed quantity of this buy lot.
+     * Returns baseSize if no consumption has been recorded.
+     */
+    getLotRemainingQuantity(): number {
+        return this.lotRemainingQuantity ?? this.baseSize;
+    }
+
+    /**
+     * Check if this buy lot has been fully consumed by sell allocations.
+     */
+    isLotFullyConsumed(): boolean {
+        return this.lotFullyConsumed === true;
+    }
+
+    /**
+     * Check if this transaction has any lot consumption records.
+     */
+    hasLotConsumption(): boolean {
+        return this.lotAllocations !== undefined && this.lotAllocations.length > 0;
     }
   }
 

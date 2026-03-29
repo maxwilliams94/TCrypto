@@ -65,6 +65,23 @@ export class FileRepository implements TransactionStorage {
                 if (t.incomeConversionRate !== undefined) transaction.incomeConversionRate = t.incomeConversionRate;
                 if (t.incomeDate) transaction.incomeDate = new Date(t.incomeDate);
                 
+                // Restore lot consumption tracking fields
+                if (t.lotConsumedQuantity !== undefined) transaction.lotConsumedQuantity = t.lotConsumedQuantity;
+                if (t.lotRemainingQuantity !== undefined) transaction.lotRemainingQuantity = t.lotRemainingQuantity;
+                if (t.lotFullyConsumed !== undefined) transaction.lotFullyConsumed = t.lotFullyConsumed;
+                if (t.lotConsumptionStrategy !== undefined) transaction.lotConsumptionStrategy = t.lotConsumptionStrategy;
+                if (t.lotAllocations && Array.isArray(t.lotAllocations)) {
+                    transaction.lotAllocations = t.lotAllocations.map((a: any) => ({
+                        sellTransactionId: a.sellTransactionId,
+                        quantity: a.quantity,
+                        costBasis: a.costBasis,
+                        buyFee: a.buyFee,
+                        sellDate: new Date(a.sellDate),
+                        taxYear: a.taxYear,
+                        strategy: a.strategy
+                    }));
+                }
+                
                 return transaction;
             });
 
@@ -106,8 +123,8 @@ export class FileRepository implements TransactionStorage {
         this.isDirty = true;
     }
 
-    async flush(): Promise<void> {
-        if (this.isDirty) {
+    async flush(force: boolean = false): Promise<void> {
+        if (this.isDirty || force) {
             await this.persist();
         }
     }

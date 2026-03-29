@@ -1,0 +1,1 @@
+export { FifoStrategy } from './fifo';

@@ -48,6 +48,9 @@ export class TaxReport {
     // Portfolio tracking
     portfolio?: Portfolio;
 
+    // Whether this report was generated with finalise=true (lot assignments persisted)
+    isFinalised: boolean = false;
+
     constructor(startDate: Date, endDate: Date, baseCurrency: string, accountingMethod: string = 'FIFO') {
         this.startDate = startDate;
         this.endDate = endDate; 
@@ -106,6 +109,7 @@ export class TaxReport {
             withdrawalEvents: this.withdrawalEvents || [],
             deductibleFees: this.deductibleFees,
             portfolio: this.portfolio?.toJSON(),
+            isFinalised: this.isFinalised,
             summary: {
                 totalProfit: this.profit,
                 totalFees: this.fees,
@@ -114,6 +118,7 @@ export class TaxReport {
                 deductibleFees: this.deductibleFees,
                 netTaxableProfit: (this.profit || 0) - (this.deductibleFees || 0),
                 numberOfSells: this.sellEvents?.length || 0,
+                isFinalised: this.isFinalised,
                 realizedGainLoss: this.portfolio?.getTotalRealizedGainLoss(),
                 unrealizedGainLoss: this.portfolio?.getTotalUnrealizedGainLoss()
             }
