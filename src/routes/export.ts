@@ -1,7 +1,7 @@
 import express from 'express';
-import { transactionRepository } from '../index';
+import { transactionRepository, taxHistoryService } from '../index';
 import { generateTaxReport } from '../services/profitReporter';
-import { resolveStrategy } from '../services/accountingStrategy';
+import { resolveAccountingMethodForPeriod } from '../services/finalisedTaxYear';
 import { 
     exportSellEventsToCSV,
     exportSellEventAllocationsToCSV,
@@ -94,7 +94,7 @@ exportRouter.get('/transactions/csv', async (req, res) => {
  */
 exportRouter.get('/tax-report/complete', async (req, res): Promise<void> => {
     try {
-        const { start, end, currency = 'NOK', method = 'FIFO' } = req.query;
+        const { start, end, currency = 'NOK', method } = req.query;
 
         if (!start || !end) {
             res.status(400).json({ 
@@ -113,19 +113,25 @@ exportRouter.get('/tax-report/complete', async (req, res): Promise<void> => {
             return;
         }
 
-        const accountingMethod = method as string;
         const shouldFinalise = (req.query.finalise === 'true');
-        try {
-            resolveStrategy(accountingMethod);
-        } catch (error: any) {
-            res.status(400).json({ error: error.message });
-            return;
-        }
+        const storedReport = await taxHistoryService.getStoredReport(
+            startDate,
+            endDate,
+            method as string | undefined,
+            currency as string
+        );
 
         // Generate tax report
         const transactions = await transactionRepository.getAll();
+        const accountingMethod = storedReport?.accountingMethod ?? resolveAccountingMethodForPeriod({
+            transactions,
+            startDate,
+            endDate,
+            requestedMethod: method as string | undefined,
+            finalise: shouldFinalise,
+        }).accountingMethod;
         const currencyRateRepo = new CurrencyRateMemoryRepository();
-        const taxReport = await generateTaxReport(
+        const taxReport = storedReport ?? await generateTaxReport(
             transactions,
             currency as string,
             startDate,
@@ -134,9 +140,12 @@ exportRouter.get('/tax-report/complete', async (req, res): Promise<void> => {
             currencyRateRepo
         );
 
-        // If finalised, persist lot consumption to storage (force=true since we mutated existing objects)
-        if (shouldFinalise && transactionRepository.flush) {
-            await transactionRepository.flush(true);
+        // If finalised, persist lot consumption to storage and store the final report snapshot
+        if (shouldFinalise && !storedReport) {
+            if (transactionRepository.flush) {
+                await transactionRepository.flush(true);
+            }
+            await taxHistoryService.saveFinalisedReport(taxReport);
             logger.info(`Tax report finalised for ${start} to ${end} using ${accountingMethod} — lot assignments persisted`);
         }
 
@@ -169,9 +178,8 @@ exportRouter.get('/tax-report/complete', async (req, res): Promise<void> => {
                 `tax_report_summary_${start}_to_${end}.csv`,
                 `sell_events_${start}_to_${end}.csv`,
                 `sell_event_allocations_${start}_to_${end}.csv`,
-                `portfolio_${start}_to_${end}.csv`,
                 `transactions_${start}_to_${end}.csv`,
-                `portfolio_${start}_to_${end}.csv`
+                `portfolio_${start}_to_${end}.csv`,
             ],
             stats: {
                 sellEvents: taxReport.sellEvents?.length || 0,
@@ -190,7 +198,7 @@ exportRouter.get('/tax-report/complete', async (req, res): Promise<void> => {
  */
 exportRouter.get('/tax-report/sell-events', async (req, res): Promise<void> => {
     try {
-        const { start, end, currency = 'NOK', method = 'FIFO' } = req.query;
+        const { start, end, currency = 'NOK', method } = req.query;
 
         if (!start || !end) {
             res.status(400).json({ 
@@ -202,17 +210,21 @@ exportRouter.get('/tax-report/sell-events', async (req, res): Promise<void> => {
         const startDate = new Date(start as string);
         const endDate = new Date(end as string);
 
-        const accountingMethod = method as string;
-        try {
-            resolveStrategy(accountingMethod);
-        } catch (error: any) {
-            res.status(400).json({ error: error.message });
-            return;
-        }
-
         const transactions = await transactionRepository.getAll();
+        const storedReport = await taxHistoryService.getStoredReport(
+            startDate,
+            endDate,
+            method as string | undefined,
+            currency as string
+        );
+        const { accountingMethod } = resolveAccountingMethodForPeriod({
+            transactions,
+            startDate,
+            endDate,
+            requestedMethod: method as string | undefined,
+        });
         const currencyRateRepo = new CurrencyRateMemoryRepository();
-        const taxReport = await generateTaxReport(
+        const taxReport = storedReport ?? await generateTaxReport(
             transactions,
             currency as string,
             startDate,
@@ -247,7 +259,7 @@ exportRouter.get('/tax-report/sell-events', async (req, res): Promise<void> => {
  */
 exportRouter.get('/tax-report/portfolio', async (req, res): Promise<void> => {
     try {
-        const { start, end, currency = 'NOK', method = 'FIFO' } = req.query;
+        const { start, end, currency = 'NOK', method } = req.query;
 
         if (!start || !end) {
             res.status(400).json({ 
@@ -259,10 +271,21 @@ exportRouter.get('/tax-report/portfolio', async (req, res): Promise<void> => {
         const startDate = new Date(start as string);
         const endDate = new Date(end as string);
 
-        const accountingMethod = method as string;
         const transactions = await transactionRepository.getAll();
+        const storedReport = await taxHistoryService.getStoredReport(
+            startDate,
+            endDate,
+            method as string | undefined,
+            currency as string
+        );
+        const { accountingMethod } = resolveAccountingMethodForPeriod({
+            transactions,
+            startDate,
+            endDate,
+            requestedMethod: method as string | undefined,
+        });
         const currencyRateRepo = new CurrencyRateMemoryRepository();
-        const taxReport = await generateTaxReport(
+        const taxReport = storedReport ?? await generateTaxReport(
             transactions,
             currency as string,
             startDate,
@@ -305,7 +328,7 @@ exportRouter.get('/tax-report/portfolio', async (req, res): Promise<void> => {
  */
 exportRouter.get('/portfolio/csv', async (req, res): Promise<void> => {
     try {
-        const { date, currency = 'NOK', method = 'FIFO' } = req.query;
+        const { date, currency = 'NOK', method } = req.query;
         const asOfDate = date ? new Date(date as string) : new Date();
 
         if (isNaN(asOfDate.getTime())) {
@@ -315,8 +338,13 @@ exportRouter.get('/portfolio/csv', async (req, res): Promise<void> => {
             return;
         }
 
-        const accountingMethod = method as string;
         const transactions = await transactionRepository.getAll();
+        const { accountingMethod } = resolveAccountingMethodForPeriod({
+            transactions,
+            startDate: new Date(0),
+            endDate: asOfDate,
+            requestedMethod: method as string | undefined,
+        });
         const currencyRateRepo = new CurrencyRateMemoryRepository();
         
         // Generate portfolio snapshot using tax report (from beginning to asOfDate)

@@ -42,6 +42,7 @@ USE_FILE_STORAGE=true npm run dev
 - `USE_FILE_STORAGE=true` — enable file-based storage
 - `DATA_FILE_PATH` — path to JSON file (default: `./data/transactions.json`)
 - `CURRENCY_RATES_FILE_PATH` — path to currency rates cache file (default: `./data/currency-rates.json`)
+- `TAX_HISTORY_FILE_PATH` — path to finalized tax report history (default: `./data/tax_history.json`)
 - `TRANSACTION_DIR` — directory containing CSV files to import (default: current directory)
 - `PORT` — server port (default: 3000)
 - `COINGECKO_API_KEY` — CoinGecko API key (required for crypto price fetching - get free Demo key at https://www.coingecko.com/en/api/pricing)
@@ -86,6 +87,10 @@ COINGECKO_API_KEY=your_demo_api_key_here npm run dev
 - `GET /transactions/:id` — Get transaction by index
 - `GET /transactions/export/csv` — Export to CSV (file storage only)
 - `GET /tax?start=YYYY-MM-DD&end=YYYY-MM-DD` — Generate tax report for date range
+- `GET /tax/history` — List finalized tax periods and accounting methods from `tax_history.json`
+- `GET /tax/lot-allocations` — Inspect persisted lot allocations by tax year and detect mixed-method conflicts
+- `DELETE /tax/lot-allocations?taxYear=YYYY&dryRun=true` — Preview cleanup of persisted lot allocations for a tax year
+- `DELETE /tax/lot-allocations?taxYear=YYYY&dryRun=false&confirm=true` — Remove persisted lot allocations and tax history for a tax year
 
 ### Export Endpoints
 
@@ -95,7 +100,7 @@ Export transactions, tax reports, and portfolio data to CSV for easy analysis:
 - `GET /export/transactions/csv` — Export all transactions to CSV (requires USE_FILE_STORAGE=true)
 
 #### Tax Report Exports
-- `GET /export/tax-report/complete?start=YYYY-MM-DD&end=YYYY-MM-DD&currency=NOK` — Export complete tax report (4 CSV files)
+- `GET /export/tax-report/complete?start=YYYY-MM-DD&end=YYYY-MM-DD&currency=NOK` — Export complete tax report (5 CSV files)
 - `GET /export/tax-report/sell-events?start=YYYY-MM-DD&end=YYYY-MM-DD` — Export sell events summary
 - `GET /export/tax-report/portfolio?start=YYYY-MM-DD&end=YYYY-MM-DD` — Export portfolio for tax period
 
@@ -126,19 +131,20 @@ curl "http://localhost:3000/portfolio?date=2024-12-31"
 
 #### CSV Export Files
 
-When using `/export/tax-report/complete`, four CSV files are generated:
+When using `/export/tax-report/complete`, five CSV files are generated:
 
 1. **tax_report_summary_{dates}.csv** — Overall metrics (profit/loss, fees, transaction counts)
 2. **sell_events_{dates}.csv** — Summary of all sell events with 17 columns including:
    - Date, Asset, Quantity, Proceeds, Cost Basis
    - Sell Fee, Buy Fees, Net Profit/Loss
-   - FIFO Matching: Buy Count, Buy IDs, Buy Dates
+  - Lot matching: Buy Count, Buy IDs, Buy Dates
    - Currency information
-3. **sell_event_allocations_{dates}.csv** — Detailed FIFO matching (one row per buy allocation)
+3. **sell_event_allocations_{dates}.csv** — Detailed lot allocations (one row per buy allocation)
    - Shows which specific buy lots matched each sell
    - Includes quantity used from each lot
    - Proportional cost basis and fees
-4. **portfolio_{dates}.csv** — Current holdings per asset with 12 columns:
+4. **transactions_{dates}.csv** — Transactions included in the tax calculation, including derived accounting legs
+5. **portfolio_{dates}.csv** — Current holdings per asset with 12 columns:
    - Quantity held, Cost basis, Average price
    - Realized and unrealized gains/losses
    - Period-specific activity (bought/sold)
@@ -147,7 +153,7 @@ When using `/export/tax-report/complete`, four CSV files are generated:
 **Use cases:**
 - Import into Excel/Google Sheets for analysis
 - Sort by date, asset, profit/loss for insights
-- Verify FIFO matching with allocation details
+- Verify lot matching with allocation details
 - Check portfolio positions and cost basis
 - Share with accountant for tax filing
 
@@ -157,10 +163,184 @@ The tax report endpoint provides detailed information for tax filing:
 
 - **Proper fee handling**: Buy fees are included in cost basis, sell fees reduce profits
 - **Withdrawal fee deductions**: Withdrawal fees are tracked as separate deductible expenses
-- **FIFO cost basis**: Sells are matched against oldest buys first
+- **Multiple accounting methods**: Choose between FIFO and LIFO cost basis calculations
 - **Detailed sell events**: Each sell includes complete audit trail of matched buys
 - **Comprehensive summary**: Total profit/loss, fees breakdown, number of transactions
 - **Net taxable profit**: Automatically calculates `totalProfit - deductibleFees` for tax reporting
+
+#### Accounting Methods
+
+TCrypto supports multiple tax accounting methods for cost basis calculation. Norwegian tax rules allow you to choose which lots to sell for virtual currencies.
+
+**Available Methods:**
+
+1. **FIFO (First In, First Out)** - Default
+   - Sells consume oldest buy lots first
+   - Chronological order: first buy matched to first sell
+   - Generally results in higher capital gains in inflationary markets
+   - Most conservative approach
+   
+2. **LIFO (Last In, First Out)** - Alternative
+   - Sells consume newest buy lots first
+   - Reverse chronological order: last buy matched to first sell
+   - Can result in lower capital gains in inflationary markets
+   - Useful for tax optimization in specific scenarios
+
+**Recommended Workflow**
+
+##### 1. Generate Draft JSON Reports First
+
+Use `GET /tax` to compare methods before you lock anything in:
+
+```bash
+# Draft report using the default FIFO method
+curl "http://localhost:3000/tax?start=2024-01-01&end=2024-12-31"
+
+# Draft report using FIFO explicitly
+curl "http://localhost:3000/tax?start=2024-01-01&end=2024-12-31&method=FIFO"
+
+# Draft report using LIFO
+curl "http://localhost:3000/tax?start=2024-01-01&end=2024-12-31&method=LIFO"
+```
+
+Draft reports do not persist anything. They are safe to run repeatedly while you compare:
+- `profit`
+- `deductibleFees`
+- `summary.netTaxableProfit`
+- `sellEvents`
+- `accountingMethod`
+
+Draft responses include `isFinalised: false`.
+
+##### 2. Finalize the Exact Tax Period Once
+
+When you are satisfied with the draft, finalize the exact tax period you want to lock:
+
+```bash
+# Finalize the full 2024 tax year with FIFO
+curl "http://localhost:3000/tax?start=2024-01-01&end=2024-12-31&method=FIFO&finalise=true"
+
+# Finalize the full 2024 tax year with LIFO
+curl "http://localhost:3000/tax?start=2024-01-01&end=2024-12-31&method=LIFO&finalise=true"
+```
+
+When `finalise=true`:
+- Lot consumption is persisted back to the buy transactions
+- A full finalized report snapshot is written to `data/tax_history.json`
+- The exact `start`, `end`, `accountingMethod`, and tax currency are recorded
+- The response includes `isFinalised: true`
+
+##### 3. Reuse the Finalized Result
+
+After a period has been finalized, the exact same tax period is treated as locked.
+
+For the same `start` and `end` values, these endpoints will reuse the stored computed report instead of recalculating lot matching:
+- `GET /tax`
+- `GET /export/tax-report/complete`
+- `GET /export/tax-report/sell-events`
+- `GET /export/tax-report/portfolio`
+
+Safest usage after finalization:
+
+```bash
+# Reuse the stored finalized JSON report
+curl "http://localhost:3000/tax?start=2024-01-01&end=2024-12-31"
+
+# Reuse the stored finalized full CSV export bundle
+curl "http://localhost:3000/export/tax-report/complete?start=2024-01-01&end=2024-12-31&currency=NOK"
+
+# Inspect finalized periods and methods
+curl "http://localhost:3000/tax/history"
+```
+
+You may also pass the same method explicitly:
+
+```bash
+curl "http://localhost:3000/tax?start=2024-01-01&end=2024-12-31&method=LIFO"
+```
+
+If you try to use a different method or a different tax currency for an already-finalized period, the API returns an error instead of silently recalculating.
+
+##### 4. Exporting After Finalization
+
+The usual export flow is:
+
+```bash
+# Step 1: review the JSON draft
+curl "http://localhost:3000/tax?start=2024-01-01&end=2024-12-31&method=LIFO"
+
+# Step 2: finalize once
+curl "http://localhost:3000/tax?start=2024-01-01&end=2024-12-31&method=LIFO&finalise=true"
+
+# Step 3: generate CSV exports from the stored finalized report
+curl "http://localhost:3000/export/tax-report/complete?start=2024-01-01&end=2024-12-31&currency=NOK"
+curl "http://localhost:3000/export/tax-report/sell-events?start=2024-01-01&end=2024-12-31&currency=NOK"
+curl "http://localhost:3000/export/tax-report/portfolio?start=2024-01-01&end=2024-12-31&currency=NOK"
+```
+
+This avoids inadvertently reapplying a different accounting method for that finalized period.
+
+##### Notes About `tax_history.json`
+
+`data/tax_history.json` is the reference file for finalized tax periods. Each finalized entry records:
+- `startDate`
+- `endDate`
+- `accountingMethod`
+- `finalisedAt`
+- the stored finalized tax report snapshot
+
+If you already have legacy transaction data with persisted lot allocations from multiple methods and no clean finalized history, the API will reject new finalization attempts for that year until the conflicting stored lot allocations are cleaned up.
+
+##### Inspecting and Cleaning Legacy Lot Allocations
+
+If an older `transactions.json` already contains persisted lot allocations from multiple accounting methods for the same tax year, inspect that first:
+
+```bash
+curl "http://localhost:3000/tax/lot-allocations"
+```
+
+The response groups persisted allocations by `taxYear` and shows:
+- `strategies`
+- `allocationCount`
+- `affectedTransactionCount`
+- `conflict`
+- `finalisedHistory`
+
+To preview the cleanup impact for a single tax year:
+
+```bash
+curl -X DELETE "http://localhost:3000/tax/lot-allocations?taxYear=2024&dryRun=true"
+```
+
+To apply the cleanup after reviewing the dry run:
+
+```bash
+curl -X DELETE "http://localhost:3000/tax/lot-allocations?taxYear=2024&dryRun=false&confirm=true"
+```
+
+Applying cleanup will:
+- remove persisted lot allocations for that `taxYear` from `transactions.json`
+- remove matching finalized entries for that `taxYear` from `tax_history.json`
+- let you regenerate a fresh draft report and finalize it again cleanly
+
+Recommended order:
+
+```bash
+# 1. Inspect conflicts
+curl "http://localhost:3000/tax/lot-allocations"
+
+# 2. Dry run cleanup for the affected year
+curl -X DELETE "http://localhost:3000/tax/lot-allocations?taxYear=2024&dryRun=true"
+
+# 3. Apply cleanup
+curl -X DELETE "http://localhost:3000/tax/lot-allocations?taxYear=2024&dryRun=false&confirm=true"
+
+# 4. Generate a fresh draft report
+curl "http://localhost:3000/tax?start=2024-01-01&end=2024-12-31&method=LIFO"
+
+# 5. Finalize again once satisfied
+curl "http://localhost:3000/tax?start=2024-01-01&end=2024-12-31&method=LIFO&finalise=true"
+```
 
 #### Withdrawal Fee Tracking
 

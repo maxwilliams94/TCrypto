@@ -1,37 +1,112 @@
 import express, { Express, Request, Response } from 'express';
 import { generateTaxReport } from '../services/profitReporter';
-import { transactionRepository, currencyRateRepository } from '../index';
-import { resolveStrategy } from '../services/accountingStrategy';
+import { transactionRepository, currencyRateRepository, taxHistoryService } from '../index';
+import { resolveAccountingMethodForPeriod } from '../services/finalisedTaxYear';
+import { cleanupLotAllocationsForYear, inspectLotAllocations } from '../services/lotAllocationMaintenance';
 import logger from '../logger';
 
 export const taxRouter = express.Router();
+
+taxRouter.get('/history', async (_req: Request, res: Response) => {
+    try {
+        const history = await taxHistoryService.listEntries();
+        res.send(history);
+    } catch (error: any) {
+        res.status(500).send({ error: error.message });
+    }
+});
+
+taxRouter.get('/lot-allocations', async (_req: Request, res: Response) => {
+    try {
+        const transactions = await transactionRepository.getAll();
+        const years = inspectLotAllocations(transactions);
+        const finalisedHistory = await taxHistoryService.listEntries();
+        res.send({
+            years,
+            finalisedHistory,
+        });
+    } catch (error: any) {
+        res.status(500).send({ error: error.message });
+    }
+});
+
+taxRouter.delete('/lot-allocations', async (req: Request, res: Response) => {
+    try {
+        const taxYear = Number(req.query.taxYear);
+        const dryRun = req.query.dryRun !== 'false';
+        const confirm = req.query.confirm === 'true';
+
+        if (!Number.isInteger(taxYear)) {
+            res.status(400).send({ error: 'taxYear query parameter is required and must be an integer year.' });
+            return;
+        }
+
+        if (!dryRun && !confirm) {
+            res.status(400).send({
+                error: 'Destructive cleanup requires confirm=true. Use dryRun=true first to inspect the impact.',
+            });
+            return;
+        }
+
+        const transactions = await transactionRepository.getAll();
+        const result = cleanupLotAllocationsForYear(transactions, taxYear, dryRun);
+        const deletedHistoryEntries = dryRun ? 0 : await taxHistoryService.deleteEntriesForTaxYear(taxYear);
+
+        if (!dryRun && transactionRepository.flush) {
+            await transactionRepository.flush(true);
+        }
+
+        res.send({
+            ...result,
+            deletedHistoryEntries,
+            nextStep: dryRun
+                ? `Re-run with dryRun=false&confirm=true to remove persisted lot allocations for ${taxYear}.`
+                : `Cleanup applied for ${taxYear}. You can now generate a fresh draft report and finalize it again.`,
+        });
+    } catch (error: any) {
+        res.status(500).send({ error: error.message });
+    }
+});
 
 taxRouter.get('/', async (req: Request, res: Response) => {
     try {
         let { start, end, method, finalise } = req.query;
         let startDate: Date = start !== undefined ? new Date(start as string) : new Date(0);
         let endDate: Date = end !== undefined ? new Date(end as string) : new Date();
-        const accountingMethod = (method as string) || 'FIFO';
         const shouldFinalise = finalise === 'true';
 
-        // Validate the accounting method early
-        try {
-            resolveStrategy(accountingMethod);
-        } catch (error: any) {
-            res.status(400).send({ error: error.message });
+        const storedReport = await taxHistoryService.getStoredReport(
+            startDate,
+            endDate,
+            method as string | undefined,
+            'NOK'
+        );
+        if (storedReport) {
+            res.send(storedReport);
             return;
         }
 
         const transactions = await transactionRepository.getAll();
+        const { accountingMethod } = resolveAccountingMethodForPeriod({
+            transactions,
+            startDate,
+            endDate,
+            requestedMethod: method as string | undefined,
+            finalise: shouldFinalise,
+        });
+
         const report = await generateTaxReport(
             transactions, "NOK", startDate, endDate,
             { accountingMethod, finalise: shouldFinalise },
             currencyRateRepository
         );
 
-        // If finalised, persist lot consumption to storage (force=true since we mutated existing objects)
-        if (shouldFinalise && transactionRepository.flush) {
-            await transactionRepository.flush(true);
+        // If finalised, persist lot consumption to storage and store the final report snapshot
+        if (shouldFinalise) {
+            if (transactionRepository.flush) {
+                await transactionRepository.flush(true);
+            }
+            await taxHistoryService.saveFinalisedReport(report);
             logger.info(`Tax report finalised for ${start} to ${end} using ${accountingMethod} — lot assignments persisted`);
         }
 

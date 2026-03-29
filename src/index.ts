@@ -7,6 +7,7 @@ import { TransactionStorage } from './repositories/storage';
 import { createCurrencyRateRepository } from './repositories/currencyRateMemory';
 import { createCurrencyRateFileRepository, CurrencyRateFileRepository } from './repositories/currencyRateFile';
 import { CurrencyRateStorage } from './repositories/currencyRateStorage';
+import { TaxHistoryService } from './services/taxHistoryService';
 
 import { importInitialTransactions } from './services/transactionImporter';
 import { transactionsRouter } from './routes/transactions';
@@ -21,6 +22,7 @@ const PORT: string | number = process.env.PORT || 3000;
 const USE_FILE_STORAGE: boolean = process.env.USE_FILE_STORAGE === 'true';
 const DATA_FILE_PATH: string = process.env.DATA_FILE_PATH || './data/transactions.json';
 const CURRENCY_RATES_FILE_PATH: string = process.env.CURRENCY_RATES_FILE_PATH || './data/currency-rates.json';
+const TAX_HISTORY_FILE_PATH: string = process.env.TAX_HISTORY_FILE_PATH || './data/tax_history.json';
 
 
 app.use(express.json());
@@ -34,7 +36,9 @@ const currencyRateRepository: CurrencyRateStorage = USE_FILE_STORAGE
     ? createCurrencyRateFileRepository(CURRENCY_RATES_FILE_PATH)
     : createCurrencyRateRepository();
 
-export { transactionRepository, currencyRateRepository };
+const taxHistoryService = new TaxHistoryService(USE_FILE_STORAGE, TAX_HISTORY_FILE_PATH);
+
+export { transactionRepository, currencyRateRepository, taxHistoryService };
 
 logger.info(`Using ${USE_FILE_STORAGE ? 'file-based' : 'in-memory'} storage${USE_FILE_STORAGE ? ` at ${DATA_FILE_PATH}` : ''}`);
 

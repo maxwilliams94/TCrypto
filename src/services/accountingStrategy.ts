@@ -4,8 +4,7 @@ import { Transaction } from '../models/transaction';
  * Supported accounting methods for tax lot selection.
  * Norwegian tax rules allow free choice of which lots to sell for virtual currencies.
  */
-export type AccountingMethod = 'FIFO';
-// Future: | 'LIFO' | 'MAX_GAIN' | 'MIN_GAIN' | 'NEUTRAL';
+export type AccountingMethod = 'FIFO' | 'LIFO';
 
 /**
  * A buy lot available for matching against a sell.
@@ -126,9 +125,13 @@ export function resolveStrategy(method: string): AccountingStrategy {
             // Lazy import to avoid circular dependencies
             const { FifoStrategy } = require('./strategies/fifo');
             return new FifoStrategy();
+        case 'LIFO':
+            // Lazy import to avoid circular dependencies
+            const { LifoStrategy } = require('./strategies/lifo');
+            return new LifoStrategy();
         default:
             throw new Error(
-                `Unknown accounting method: '${method}'. Supported methods: FIFO`
+                `Unknown accounting method: '${method}'. Supported methods: FIFO, LIFO`
             );
     }
 }

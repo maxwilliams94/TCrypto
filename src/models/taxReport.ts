@@ -106,6 +106,8 @@ export class TaxReport {
             sellEvents: this.sellEvents?.map(se => se.toJSON()) || [],
             totalBuyFeesIncluded: this.totalBuyFeesIncluded,
             totalSellFees: this.totalSellFees,
+            incomeEvents: this.incomeEvents || [],
+            totalIncome: this.totalIncome,
             withdrawalEvents: this.withdrawalEvents || [],
             deductibleFees: this.deductibleFees,
             portfolio: this.portfolio?.toJSON(),

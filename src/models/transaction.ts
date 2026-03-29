@@ -344,6 +344,42 @@ export class Transaction {
     hasLotConsumption(): boolean {
         return this.lotAllocations !== undefined && this.lotAllocations.length > 0;
     }
+
+    /**
+     * Remove persisted lot allocations for a specific tax year and recompute
+     * the aggregate lot consumption fields on this transaction.
+     */
+    clearLotConsumptionForYear(taxYear: number): number {
+        if (!this.lotAllocations || this.lotAllocations.length === 0) {
+            return 0;
+        }
+
+        const before = this.lotAllocations.length;
+        this.lotAllocations = this.lotAllocations.filter(allocation => allocation.taxYear !== taxYear);
+        const removed = before - this.lotAllocations.length;
+
+        this.recalculateLotConsumptionState();
+        return removed;
+    }
+
+    private recalculateLotConsumptionState(): void {
+        if (!this.lotAllocations || this.lotAllocations.length === 0) {
+            this.lotAllocations = undefined;
+            this.lotConsumedQuantity = undefined;
+            this.lotRemainingQuantity = undefined;
+            this.lotFullyConsumed = undefined;
+            this.lotConsumptionStrategy = undefined;
+            return;
+        }
+
+        const consumedQuantity = this.lotAllocations.reduce((sum, allocation) => sum + allocation.quantity, 0);
+        this.lotConsumedQuantity = consumedQuantity;
+        this.lotRemainingQuantity = Math.max(0, this.baseSize - consumedQuantity);
+        this.lotFullyConsumed = this.lotRemainingQuantity <= 0.00000000001;
+
+        const strategies = Array.from(new Set(this.lotAllocations.map(allocation => allocation.strategy)));
+        this.lotConsumptionStrategy = strategies.length === 1 ? strategies[0] : 'MIXED';
+    }
   }
 
 export function isCryptoCryptoTransaction(transaction: Transaction): boolean {
