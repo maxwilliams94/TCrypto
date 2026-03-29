@@ -41,8 +41,11 @@ export class TaxReport {
         asset: string;
         quantity: number;
         fee: number;                // Fee in original currency
+        feeCurrency: string;        // Original fee currency
         feeInTaxCurrency: number;   // Fee converted to tax currency
         withdrawalDate: Date;
+        includedInReport: boolean;  // Explicit marker for report inclusion
+        reportTaxYear: number;      // Tax year this withdrawal is included in
     }> = [];
     
     // Portfolio tracking

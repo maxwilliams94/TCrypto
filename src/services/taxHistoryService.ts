@@ -176,7 +176,10 @@ function hydrateTaxReport(snapshot: any): TaxReport {
     report.totalSellFees = snapshot.totalSellFees || 0;
     report.withdrawalEvents = (snapshot.withdrawalEvents || []).map((event: any) => ({
         ...event,
+        feeCurrency: event.feeCurrency || '',
         withdrawalDate: new Date(event.withdrawalDate),
+        includedInReport: event.includedInReport === true,
+        reportTaxYear: event.reportTaxYear || new Date(snapshot.startDate).getFullYear(),
     }));
     report.deductibleFees = snapshot.deductibleFees || 0;
     report.incomeEvents = (snapshot.incomeEvents || []).map((event: any) => ({

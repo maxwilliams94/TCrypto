@@ -151,7 +151,15 @@ export async function importInitialTransactions(storage: TransactionStorage, cur
         logger.info(`Transaction import process completed. Added ${newTransactionCount} new transactions. Total: ${allTransactions.length} transactions in the repository.`);
         
         // Populate tax conversions for all transactions (including existing ones)
-        if (newTransactionCount > 0 || allTransactions.some(t => !t.hasTaxConversion())) {
+        const hasUnconvertedTransactions = allTransactions.some(t => !t.hasTaxConversion());
+        const hasWithdrawalsNeedingFeeReconversion = allTransactions.some(
+            t =>
+                t.type === 'WITHDRAW' &&
+                (t.fee ?? 0) > 0 &&
+                !!t.feeCurrency &&
+                t.feeCurrency.toUpperCase() !== nativeCurrency.toUpperCase()
+        );
+        if (newTransactionCount > 0 || hasUnconvertedTransactions || hasWithdrawalsNeedingFeeReconversion) {
             logger.info(`Populating tax conversions for transactions (native currency: ${nativeCurrency})...`);
             await populateTaxConversionsForImport(allTransactions, nativeCurrency, currencyRateStorage);
             logger.info('Tax conversion population complete');
@@ -336,7 +344,24 @@ async function populateTaxConversionsForImport(
     
     // Filter transactions that need tax conversion
     const transactionsNeedingConversion = transactions.filter(
-        t => !t.hasTaxConversion() || t.taxCurrency !== taxCurrency
+        t => {
+            if (!t.hasTaxConversion() || t.taxCurrency !== taxCurrency) {
+                return true;
+            }
+
+            // Force re-conversion for withdrawals with explicit non-tax fee currencies
+            // so older persisted taxFee values are corrected.
+            if (
+                t.type === 'WITHDRAW' &&
+                (t.fee ?? 0) > 0 &&
+                !!t.feeCurrency &&
+                t.feeCurrency.toUpperCase() !== taxCurrency.toUpperCase()
+            ) {
+                return true;
+            }
+
+            return false;
+        }
     );
     
     if (transactionsNeedingConversion.length === 0) {
@@ -347,59 +372,59 @@ async function populateTaxConversionsForImport(
     logger.info(`Converting ${transactionsNeedingConversion.length} transactions to ${taxCurrency}`);
     
     for (const transaction of transactionsNeedingConversion) {
-        // Skip if quote currency is already the tax currency
-        if (transaction.quoteCurrency === taxCurrency) {
-            transaction.setTaxConversion(taxCurrency, 1.0, transaction.dateTime);
-            continue;
-        }
-
         try {
-            // Skip if quote currency is already the tax currency (case-insensitive check)
-            if (transaction.quoteCurrency?.toUpperCase() === taxCurrency?.toUpperCase()) {
-                transaction.setTaxConversion(taxCurrency, 1.0, transaction.dateTime);
-                continue;
-            }
-            
-            // Fetch exchange rate for quote currency -> tax currency
-            let exchangeRate: number;
-            const quoteCurrencyForLookup = mapStablecoinToFiat(transaction.quoteCurrency);
-            
-            if (isFiat(transaction.quoteCurrency)) {
-                exchangeRate = await exchangeRateService.getCcyNokRate(quoteCurrencyForLookup, transaction.dateTime);
-            } else {
-                exchangeRate = await exchangeRateService.getCryptoPriceInCurrency(
-                    transaction.quoteCurrency,
-                    taxCurrency,
-                    transaction.dateTime
-                );
-            }
-
-            // Determine effective fee currency only if a non-zero fee exists
-            let feeConversionRate: number | undefined = undefined;
-            let effectiveFeeCurrency: string | undefined = transaction.feeCurrency;
-            if ((transaction.fee ?? 0) > 0 && !effectiveFeeCurrency) {
-                const fiatInPair = isFiat(transaction.baseCurrency) ? transaction.baseCurrency : (isFiat(transaction.quoteCurrency) ? transaction.quoteCurrency : undefined);
-                effectiveFeeCurrency = fiatInPair;
-            }
-
-            if ((transaction.fee ?? 0) > 0 && effectiveFeeCurrency && effectiveFeeCurrency?.toUpperCase() !== transaction.quoteCurrency?.toUpperCase()) {
-                const feeCurrencyForLookup = mapStablecoinToFiat(effectiveFeeCurrency);
-                if (isFiat(effectiveFeeCurrency)) {
-                    feeConversionRate = await exchangeRateService.getCcyNokRate(feeCurrencyForLookup, transaction.dateTime);
+            // Determine quote conversion first. Even when quote already equals tax currency,
+            // we still need to evaluate fee conversion for crypto-denominated withdrawal fees.
+            let exchangeRate = 1.0;
+            const quoteEqualsTax = transaction.quoteCurrency?.toUpperCase() === taxCurrency?.toUpperCase();
+            if (!quoteEqualsTax) {
+                const quoteCurrencyForLookup = mapStablecoinToFiat(transaction.quoteCurrency);
+                if (isFiat(transaction.quoteCurrency)) {
+                    exchangeRate = await exchangeRateService.getCcyNokRate(quoteCurrencyForLookup, transaction.dateTime);
                 } else {
-                    feeConversionRate = await exchangeRateService.getCryptoPriceInCurrency(
-                        effectiveFeeCurrency,
+                    exchangeRate = await exchangeRateService.getCryptoPriceInCurrency(
+                        transaction.quoteCurrency,
                         taxCurrency,
                         transaction.dateTime
                     );
                 }
+            }
+
+            // Determine effective fee currency only if a non-zero fee exists.
+            // If fee currency is explicitly provided, always prefer that.
+            let feeConversionRate: number | undefined = undefined;
+            let effectiveFeeCurrency: string | undefined = transaction.feeCurrency;
+            if ((transaction.fee ?? 0) > 0 && !effectiveFeeCurrency) {
+                const fiatInPair = isFiat(transaction.baseCurrency)
+                    ? transaction.baseCurrency
+                    : (isFiat(transaction.quoteCurrency) ? transaction.quoteCurrency : undefined);
+                effectiveFeeCurrency = fiatInPair;
+            }
+
+            if ((transaction.fee ?? 0) > 0 && effectiveFeeCurrency) {
+                const feeEqualsTax = effectiveFeeCurrency.toUpperCase() === taxCurrency.toUpperCase();
+                if (!feeEqualsTax) {
+                    const feeCurrencyForLookup = mapStablecoinToFiat(effectiveFeeCurrency);
+                    if (isFiat(effectiveFeeCurrency)) {
+                        feeConversionRate = await exchangeRateService.getCcyNokRate(feeCurrencyForLookup, transaction.dateTime);
+                    } else {
+                        feeConversionRate = await exchangeRateService.getCryptoPriceInCurrency(
+                            effectiveFeeCurrency,
+                            taxCurrency,
+                            transaction.dateTime
+                        );
+                    }
+                } else {
+                    feeConversionRate = 1.0;
+                }
+
                 // Record effective fee currency for consistency downstream
                 transaction.feeCurrency = effectiveFeeCurrency;
             }
 
             // Set tax conversion fields, using feeConversionRate if available
             transaction.setTaxConversion(taxCurrency, exchangeRate, transaction.dateTime, feeConversionRate);
-            
+
         } catch (error) {
             logger.warn(
                 `Failed to convert transaction ${transaction.id} from ${transaction.quoteCurrency} to ${taxCurrency}: ${error}`

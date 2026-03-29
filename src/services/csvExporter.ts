@@ -241,6 +241,8 @@ export async function exportTaxReportSummaryToCSV(
         ['Total Fees', (taxReport.fees || 0).toFixed(2)],
         ['Total Buy Fees', (taxReport.totalBuyFeesIncluded || 0).toFixed(2)],
         ['Total Sell Fees', (taxReport.totalSellFees || 0).toFixed(2)],
+        ['Deductible Withdrawal Fees', (taxReport.deductibleFees || 0).toFixed(2)],
+        ['Included Withdrawals', (taxReport.withdrawalEvents?.length || 0).toString()],
         ['Assets Traded', Array.from(taxReport.assets || []).join(', ')],
         ['Exchanges Used', Array.from(taxReport.exchanges || []).join(', ')],
         ['Portfolio Total Realized Gain/Loss', (taxReport.portfolio?.getTotalRealizedGainLoss() || 0).toFixed(2)],

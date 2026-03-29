@@ -113,25 +113,30 @@ export async function generateTaxReport(
             );
         }
         
-        // Track deductible fees from withdrawal transactions
-        if (isInScope && t.type === 'WITHDRAW' && t.fee > 0) {
-            const feeInTaxCurrency = t.getTaxFee();
-            
+        // Track in-scope withdrawals explicitly and aggregate deductible fees when present.
+        if (isInScope && t.type === 'WITHDRAW') {
+            const feeInTaxCurrency = t.fee > 0 ? t.getTaxFee() : 0;
+
             taxReport.withdrawalEvents!.push({
                 transactionId: t.id,
                 asset: t.baseCurrency,
                 quantity: t.baseSize,
                 fee: t.fee,
+                feeCurrency: t.feeCurrency || t.quoteCurrency,
                 feeInTaxCurrency: feeInTaxCurrency,
-                withdrawalDate: t.dateTime
+                withdrawalDate: t.dateTime,
+                includedInReport: true,
+                reportTaxYear: periodStart.getFullYear()
             });
-            
-            taxReport.deductibleFees = (taxReport.deductibleFees || 0) + feeInTaxCurrency;
-            
-            logger.debug(
-                `Withdrawal fee: ${t.fee} ${t.feeCurrency || t.quoteCurrency} = ${feeInTaxCurrency} ${nativeCurrency} ` +
-                `for withdrawal of ${t.baseSize} ${t.baseCurrency} on ${t.dateTime.toISOString()}`
-            );
+
+            if (t.fee > 0) {
+                taxReport.deductibleFees = (taxReport.deductibleFees || 0) + feeInTaxCurrency;
+
+                logger.debug(
+                    `Withdrawal fee: ${t.fee} ${t.feeCurrency || t.quoteCurrency} = ${feeInTaxCurrency} ${nativeCurrency} ` +
+                    `for withdrawal of ${t.baseSize} ${t.baseCurrency} on ${t.dateTime.toISOString()}`
+                );
+            }
         }
         
         // Only add to report metrics if transaction is in the tax period
