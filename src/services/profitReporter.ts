@@ -249,12 +249,14 @@ export async function generateTaxReport(
                 
                 // Record lot consumption on the buy transaction only when finalising
                 if (finalise) {
+                    const reportTaxYear = periodStart.getFullYear();
                     buyPosition.transaction.recordLotConsumption(
                         t.id,
                         quantityToAllocate,
                         costBasis,
                         allocatedBuyFee,
                         t.dateTime,
+                        reportTaxYear,
                         strategy.name
                     );
                 }

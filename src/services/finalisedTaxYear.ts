@@ -58,7 +58,8 @@ export function resolveAccountingMethodForPeriod(
     if (options.finalise) {
         throw new Error(
             `Tax year ${taxYear} has already been finalised using ${lockedMethod}. ` +
-            `Generate reports without finalise=true and omit method or use method=${lockedMethod}.`
+            `To regenerate: use the Reset button in "History & Cleanup" section of the UI, ` +
+            `or call DELETE /tax/lot-allocations?taxYear=${taxYear}&dryRun=false&confirm=true`
         );
     }
 
@@ -86,10 +87,13 @@ function getSingleTaxYear(startDate: Date, endDate: Date): number | undefined {
 
 function getLockedMethodForTaxYear(transactions: Transaction[], taxYear: number): string | undefined {
     const strategies = new Set<string>();
+    let allocationCount = 0;
 
     for (const transaction of transactions) {
         for (const allocation of transaction.lotAllocations ?? []) {
+            // Only count allocations that match this exact tax year
             if (allocation.taxYear === taxYear) {
+                allocationCount++;
                 strategies.add(normaliseAccountingMethod(allocation.strategy) ?? allocation.strategy);
             }
         }
@@ -98,9 +102,12 @@ function getLockedMethodForTaxYear(transactions: Transaction[], taxYear: number)
     if (strategies.size > 1) {
         throw new Error(
             `Tax year ${taxYear} contains persisted lot allocations from multiple accounting methods: ` +
-            `${Array.from(strategies).join(', ')}. Clean up the stored lot allocations before generating new reports.`
+            `${Array.from(strategies).join(', ')}. ` +
+            `Clean up the stored lot allocations before generating new reports. ` +
+            `Found ${allocationCount} allocations for this tax year.`
         );
     }
 
+    // Return method only if we found allocations for this exact tax year
     return strategies.size === 1 ? Array.from(strategies)[0] : undefined;
 }

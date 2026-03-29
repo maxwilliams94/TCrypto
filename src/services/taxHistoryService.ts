@@ -11,6 +11,7 @@ interface TaxHistoryEntry {
     endDate: string;
     accountingMethod: string;
     finalisedAt: string;
+    profit?: number;
     taxYear?: number;
     report: ReturnType<TaxReport['toJSON']>;
 }
@@ -67,6 +68,7 @@ export class TaxHistoryService {
             endDate: report.endDate.toISOString(),
             accountingMethod: normaliseAccountingMethod(report.accountingMethod) || report.accountingMethod,
             finalisedAt: new Date().toISOString(),
+            profit: report.profit || 0,
             taxYear: report.startDate.getFullYear() === report.endDate.getFullYear()
                 ? report.startDate.getFullYear()
                 : undefined,
@@ -88,7 +90,11 @@ export class TaxHistoryService {
 
     async listEntries(): Promise<Array<Omit<TaxHistoryEntry, 'report'>>> {
         await this.ensureLoaded();
-        return this.entries.map(({ report, ...entry }) => entry);
+        return this.entries.map(({ report, ...entry }) => ({
+            ...entry,
+            // Backfill profit for legacy history entries that predate the top-level field.
+            profit: entry.profit ?? report?.profit ?? 0,
+        }));
     }
 
     async deleteEntriesForTaxYear(taxYear: number): Promise<number> {

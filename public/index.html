@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TCrypto Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #667eea;
+            --secondary-color: #764ba2;
+            --success-color: #48bb78;
+            --danger-color: #f56565;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .navbar-brand {
+            font-weight: bold;
+            font-size: 1.5rem;
+        }
+        
+        .nav-tabs {
+            border-bottom: 2px solid #dee2e6;
+        }
+        
+        .nav-tabs .nav-link {
+            color: #667eea;
+            border: none;
+            border-bottom: 3px solid transparent;
+            border-radius: 0;
+            transition: all 0.3s ease;
+        }
+        
+        .nav-tabs .nav-link:hover {
+            border-bottom-color: #667eea;
+        }
+        
+        .nav-tabs .nav-link.active {
+            border-bottom-color: #667eea;
+            background: none;
+            color: #667eea;
+            font-weight: 600;
+        }
+        
+        .card {
+            border: none;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        
+        .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px 10px 0 0 !important;
+            padding: 1.25rem;
+            font-weight: 600;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        .table {
+            border-collapse: collapse;
+        }
+        
+        .table thead {
+            background: #f8f9fa;
+        }
+        
+        .table tbody tr:hover {
+            background: #f0f0f0;
+        }
+        
+        .badge {
+            padding: 0.5rem 0.75rem;
+            border-radius: 6px;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .loading.show {
+            display: block;
+        }
+        
+        .spinner-border {
+            color: #667eea;
+        }
+        
+        .filter-section {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            margin-bottom: 15px;
+        }
+        
+        .stat-card h5 {
+            color: #667eea;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        
+        .stat-card .value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #764ba2;
+        }
+        
+        .error-message {
+            display: none;
+        }
+        
+        .error-message.show {
+            display: block;
+        }
+        
+        .success-message {
+            display: none;
+        }
+        
+        .success-message.show {
+            display: block;
+        }
+        
+        .form-label {
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .form-control, .form-select {
+            border-radius: 6px;
+            border: 1px solid #ddd;
+        }
+        
+        .form-control:focus, .form-select:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+        }
+        
+        .modal-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .transaction-row {
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .transaction-row:hover {
+            background: #e8e8e8 !important;
+        }
+        
+        .modal-content {
+            border-radius: 10px;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-light bg-white rounded-3 shadow-sm mb-4">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-coin"></i> TCrypto Dashboard
+            </a>
+            <span class="navbar-text">
+                <small class="text-muted">Crypto Transaction & Tax Reporting</small>
+            </span>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <!-- Messages -->
+        <div id="successMessage" class="alert alert-success success-message alert-dismissible fade" role="alert">
+            <i class="bi bi-check-circle"></i> <span id="successText"></span>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        <div id="errorMessage" class="alert alert-danger error-message alert-dismissible fade" role="alert">
+            <i class="bi bi-exclamation-circle"></i> <span id="errorText"></span>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+
+        <!-- Tabs -->
+        <ul class="nav nav-tabs bg-white rounded-top-3 shadow-sm p-3" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="transactions-tab" data-bs-toggle="tab" data-bs-target="#transactions" type="button" role="tab">
+                    <i class="bi bi-list-ul"></i> Transactions
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="tax-tab" data-bs-toggle="tab" data-bs-target="#tax" type="button" role="tab">
+                    <i class="bi bi-calculator"></i> Tax Reports
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="portfolio-tab" data-bs-toggle="tab" data-bs-target="#portfolio" type="button" role="tab">
+                    <i class="bi bi-pie-chart"></i> Portfolio
+                </button>
+            </li>
+        </ul>
+
+        <!-- Tab Content -->
+        <div class="tab-content bg-white rounded-bottom-3 shadow-sm p-4">
+            
+            <!-- TRANSACTIONS TAB -->
+            <div class="tab-pane fade show active" id="transactions" role="tabpanel">
+                <h3 class="mb-4">
+                    <i class="bi bi-list-ul"></i> Transactions
+                </h3>
+                
+                <!-- Filters -->
+                <div class="filter-section">
+                    <!-- Quick year selectors -->
+                    <div class="mb-3">
+                        <label class="form-label">Quick Select</label>
+                        <div class="btn-group flex-wrap" role="group">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="selectTransactionYear(2021)">2021</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="selectTransactionYear(2022)">2022</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="selectTransactionYear(2023)">2023</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="selectTransactionYear(2024)">2024</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="selectTransactionYear(2025)">2025</button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="selectTransactionYear(2026)">2026</button>
+                        </div>
+                    </div>
+                    <hr>
+
+                    <div class="row g-3">
+                        <div class="col-md-2">
+                            <label class="form-label">Type</label>
+                            <select id="filterType" class="form-select">
+                                <option value="">All Types</option>
+                                <option value="TRADE">Trade</option>
+                                <option value="STAKING_REWARD">Staking Reward</option>
+                                <option value="LENDING_REWARD">Lending Reward</option>
+                                <option value="AIRDROP">Airdrop</option>
+                                <option value="MINING_REWARD">Mining Reward</option>
+                                <option value="FORK">Fork</option>
+                                <option value="INTERNAL_TRANSFER">Internal Transfer</option>
+                                <option value="WITHDRAW">Withdraw</option>
+                                <option value="DEPOSIT">Deposit</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Asset</label>
+                            <input type="text" id="filterAsset" class="form-control" placeholder="e.g., ETH, BTC">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Start Date</label>
+                            <input type="date" id="filterStartDate" class="form-control">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">End Date</label>
+                            <input type="date" id="filterEndDate" class="form-control">
+                        </div>
+                        <div class="col-md-2 d-flex align-items-end">
+                            <button class="btn btn-primary w-100" onclick="loadTransactions()">
+                                <i class="bi bi-search"></i> Filter
+                            </button>
+                        </div>
+                        <div class="col-md-2 d-flex align-items-end">
+                            <button class="btn btn-outline-secondary w-100" onclick="exportTransactionsCSV()">
+                                <i class="bi bi-download"></i> Export CSV
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stats -->
+                <div class="row mb-4">
+                    <div class="col-md-3">
+                        <div class="stat-card">
+                            <h5>Total Transactions</h5>
+                            <div class="value" id="totalTransactions">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Loading -->
+                <div id="transactionsLoading" class="loading">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p>Loading transactions...</p>
+                </div>
+
+                <!-- Transactions Table -->
+                <div id="transactionsContent" style="display: none;">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Type</th>
+                                    <th>Market</th>
+                                    <th>Quantity</th>
+                                    <th>Quote Value (NOK)</th>
+                                    <th>Price (NOK)</th>
+                                    <th>Side</th>
+                                </tr>
+                            </thead>
+                            <tbody id="transactionsTable">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAX REPORTS TAB -->
+            <div class="tab-pane fade" id="tax" role="tabpanel">
+                <h3 class="mb-4">
+                    <i class="bi bi-calculator"></i> Tax Reports
+                </h3>
+
+                <!-- Generate New Report -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <i class="bi bi-plus-circle"></i> Generate New Report
+                    </div>
+                    <div class="card-body">
+                        <!-- Quick year selectors -->
+                        <div class="mb-3">
+                            <label class="form-label">Quick Select Tax Year</label>
+                            <div class="btn-group flex-wrap" role="group">
+                                <button type="button" class="btn btn-outline-primary btn-sm" onclick="selectTaxYear(2021)">2021</button>
+                                <button type="button" class="btn btn-outline-primary btn-sm" onclick="selectTaxYear(2022)">2022</button>
+                                <button type="button" class="btn btn-outline-primary btn-sm" onclick="selectTaxYear(2023)">2023</button>
+                                <button type="button" class="btn btn-outline-primary btn-sm" onclick="selectTaxYear(2024)">2024</button>
+                                <button type="button" class="btn btn-outline-primary btn-sm" onclick="selectTaxYear(2025)">2025</button>
+                                <button type="button" class="btn btn-outline-primary btn-sm" onclick="selectTaxYear(2026)">2026</button>
+                            </div>
+                        </div>
+                        <hr>
+
+                        <div class="row g-3">
+                            <div class="col-md-3">
+                                <label class="form-label">Start Date</label>
+                                <input type="date" id="taxStartDate" class="form-control">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">End Date</label>
+                                <input type="date" id="taxEndDate" class="form-control">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Accounting Method</label>
+                                <select id="taxMethod" class="form-select">
+                                    <option value="">Auto Detect</option>
+                                    <option value="FIFO">FIFO</option>
+                                    <option value="LIFO">LIFO</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3 d-flex align-items-end gap-2">
+                                <button class="btn btn-primary flex-grow-1" onclick="generateTaxReport(false)">
+                                    <i class="bi bi-file-earmark-text"></i> Draft
+                                </button>
+                                <button class="btn btn-danger flex-grow-1" onclick="confirmFinalize()" title="Finalizing will lock lot allocations">
+                                    <i class="bi bi-lock"></i> Finalize
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Current Report -->
+                <div id="taxReportContent" style="display: none;">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <i class="bi bi-file-earmark-check"></i> Report Summary
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-3">
+                                    <div class="stat-card">
+                                        <h5>Period</h5>
+                                        <div class="value" id="reportPeriod" style="font-size: 1rem;">-</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="stat-card">
+                                        <h5>Total Realized Profit</h5>
+                                        <div class="value" id="reportProfit" style="font-size: 1rem; color: #48bb78;">0</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="stat-card">
+                                        <h5>Accounting Method</h5>
+                                        <div class="value" id="reportMethod" style="font-size: 1rem;">-</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="stat-card">
+                                        <h5>Status</h5>
+                                        <div class="value" id="reportStatus" style="font-size: 0.9rem;">-</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="row mt-4">
+                                <div class="col-12">
+                                    <h5>Sell Events</h5>
+                                    <div class="table-responsive">
+                                        <table class="table table-sm">
+                                            <thead>
+                                                <tr>
+                                                    <th>Date</th>
+                                                    <th>Asset</th>
+                                                    <th>Quantity</th>
+                                                    <th>Cost Basis (NOK)</th>
+                                                    <th>Proceeds (NOK)</th>
+                                                    <th>Profit/Loss (NOK)</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="sellEventsTable">
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Loading -->
+                <div id="taxLoading" class="loading">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p>Generating tax report...</p>
+                </div>
+
+                <!-- Tax History -->
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-hourglass-split"></i> History & Cleanup
+                    </div>
+                    <div class="card-body">
+                        <div id="taxHistoryLoading" class="loading">
+                            <div class="spinner-border" role="status"></div>
+                            <p>Loading history...</p>
+                        </div>
+                        <div id="taxHistoryContent" style="display: none;">
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>Period</th>
+                                            <th>Realized Profit (NOK)</th>
+                                            <th>Method</th>
+                                            <th>Date Finalized</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="taxHistoryTable">
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PORTFOLIO TAB -->
+            <div class="tab-pane fade" id="portfolio" role="tabpanel">
+                <h3 class="mb-4">
+                    <i class="bi bi-pie-chart"></i> Portfolio
+                </h3>
+
+                <!-- Portfolio Date Selector -->
+                <div class="filter-section">
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <label class="form-label">As of Date</label>
+                            <input type="date" id="portfolioDate" class="form-control">
+                        </div>
+                        <div class="col-md-3 d-flex align-items-end">
+                            <button class="btn btn-primary w-100" onclick="loadPortfolio()">
+                                <i class="bi bi-arrow-repeat"></i> Refresh
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Loading -->
+                <div id="portfolioLoading" class="loading">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p>Loading portfolio...</p>
+                </div>
+
+                <!-- Portfolio Summary -->
+                <div id="portfolioContent" style="display: none;">
+                    <div class="row mb-4">
+                        <div class="col-md-4">
+                            <div class="stat-card">
+                                <h5>Total Value (NOK)</h5>
+                                <div class="value" id="portfolioValue">0</div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="stat-card">
+                                <h5>Positions</h5>
+                                <div class="value" id="portfolioCount">0</div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="stat-card">
+                                <h5>Largest Position</h5>
+                                <div class="value" id="portfolioLargest" style="font-size: 0.9rem;">-</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Portfolio Holdings -->
+                    <div class="card">
+                        <div class="card-header">
+                            <i class="bi bi-list"></i> Holdings
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>Asset</th>
+                                            <th>Quantity</th>
+                                            <th>Price (NOK)</th>
+                                            <th>Value (NOK)</th>
+                                            <th>% of Portfolio</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="portfolioTable">
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Transaction Detail Modal -->
+    <div class="modal fade" id="transactionModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Transaction Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="transactionModalBody">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const API_BASE = window.location.origin;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadTransactions();
+            loadTaxHistory();
+            setDefaultDates();
+        });
+
+        // Utility Functions
+        function setDefaultDates() {
+            const today = new Date().toISOString().split('T')[0];
+            const lastYear = new Date(new Date().setFullYear(new Date().getFullYear() - 1)).toISOString().split('T')[0];
+            
+            document.getElementById('filterStartDate').value = lastYear;
+            document.getElementById('filterEndDate').value = today;
+            document.getElementById('portfolioDate').value = today;
+        }
+
+        function formatDateForInput(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function selectTaxYear(year) {
+            const startDate = new Date(year, 0, 1); // Jan 1 of selected year
+            const endDate = new Date(year, 11, 31); // Dec 31 of selected year
+            
+            document.getElementById('taxStartDate').value = formatDateForInput(startDate);
+            document.getElementById('taxEndDate').value = formatDateForInput(endDate);
+        }
+
+        function selectTransactionYear(year) {
+            const startDate = new Date(year, 0, 1); // Jan 1 of selected year
+            const endDate = new Date(year, 11, 31); // Dec 31 of selected year
+            
+            document.getElementById('filterStartDate').value = formatDateForInput(startDate);
+            document.getElementById('filterEndDate').value = formatDateForInput(endDate);
+            loadTransactions();
+        }
+
+        function confirmFinalize() {
+            const startDate = document.getElementById('taxStartDate').value;
+            const endDate = document.getElementById('taxEndDate').value;
+            
+            if (!startDate || !endDate) {
+                showError('Please select start and end dates');
+                return;
+            }
+
+            const start = new Date(startDate);
+            const year = start.getFullYear();
+            
+            const confirmed = confirm(
+                `⚠️  WARNING: Finalizing will lock lot allocations for ${year}!\n\n` +
+                `This means:\n` +
+                `• Lot assignments become permanent\n` +
+                `• You cannot change the accounting method\n` +
+                `• Reports will be archived\n\n` +
+                `Make sure all data for ${year} is correct before proceeding.\n\n` +
+                `Continue with finalizing?`
+            );
+            
+            if (confirmed) {
+                generateTaxReport(true);
+            }
+        }
+
+        async function resetTaxYear(year) {
+            const confirmed = confirm(
+                `⚠️  WARNING: This will delete finalized report for ${year}!\n\n` +
+                `You'll be able to:\n` +
+                `• Regenerate the report\n` +
+                `• Try different accounting methods\n\n` +
+                `Are you sure?`
+            );
+
+            if (!confirmed) return;
+
+            try {
+                console.log(`Resetting tax year ${year}`);
+                const response = await fetch(
+                    `${API_BASE}/tax/lot-allocations?taxYear=${year}&dryRun=false&confirm=true`,
+                    { method: 'DELETE' }
+                );
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ error: response.statusText }));
+                    throw new Error(errorData.error || response.statusText);
+                }
+
+                const result = await response.json();
+                showSuccess(`Tax year ${year} has been reset. You can now regenerate the report.`);
+                loadTaxHistory();
+                console.log('Reset result:', result);
+            } catch (error) {
+                console.error('Error resetting tax year:', error);
+                showError('Failed to reset tax year: ' + (error instanceof Error ? error.message : String(error)));
+            }
+        }
+
+        function formatDate(dateString) {
+            return new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+        }
+
+        function formatCurrency(value) {
+            return new Intl.NumberFormat('en-US', { 
+                style: 'currency', 
+                currency: 'NOK',
+                minimumFractionDigits: 2
+            }).format(value).replace('NOK', '').trim();
+        }
+
+        function showSuccess(message) {
+            document.getElementById('successText').textContent = message;
+            document.getElementById('successMessage').classList.add('show');
+            setTimeout(() => {
+                document.getElementById('successMessage').classList.remove('show');
+            }, 3000);
+        }
+
+        function showError(message) {
+            document.getElementById('errorText').textContent = message;
+            document.getElementById('errorMessage').classList.add('show');
+        }
+
+        // TRANSACTIONS
+        async function loadTransactions() {
+            const type = document.getElementById('filterType').value;
+            const asset = document.getElementById('filterAsset').value;
+            const startDate = document.getElementById('filterStartDate').value;
+            const endDate = document.getElementById('filterEndDate').value;
+
+            document.getElementById('transactionsLoading').classList.add('show');
+            document.getElementById('transactionsContent').style.display = 'none';
+
+            try {
+                let url = `${API_BASE}/transactions?`;
+                if (type) url += `type=${type}&`;
+                if (asset) url += `asset=${asset}&`;
+                if (startDate) url += `startDate=${startDate}&`;
+                if (endDate) url += `endDate=${endDate}&`;
+
+                console.log('Fetching:', url);
+                const response = await fetch(url);
+                
+                if (!response.ok) {
+                    throw new Error(`API returned ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                console.log('Transactions data:', data);
+
+                document.getElementById('totalTransactions').textContent = data.count;
+
+                const tbody = document.getElementById('transactionsTable');
+                tbody.innerHTML = '';
+
+                data.transactions.forEach(tx => {
+                    const row = document.createElement('tr');
+                    row.className = 'transaction-row';
+                    const [base, quote] = tx.CCY ? tx.CCY.split('-') : ['', ''];
+                    const quoteSize = tx.taxQuoteSize || (tx.baseSize * tx.price) || 0;
+                    row.innerHTML = `
+                        <td>${formatDate(tx.dateTime)}</td>
+                        <td><span class="badge bg-info">${tx.type}</span></td>
+                        <td>${tx.CCY}</td>
+                        <td>${parseFloat(tx.baseSize || 0).toFixed(8)}</td>
+                        <td>${formatCurrency(quoteSize)}</td>
+                        <td>${formatCurrency(tx.price || 0)}</td>
+                        <td><span class="badge bg-success">${tx.side || 'unknown'}</span></td>
+                    `;
+                    tbody.appendChild(row);
+                });
+
+                document.getElementById('transactionsLoading').classList.remove('show');
+                document.getElementById('transactionsContent').style.display = 'block';
+            } catch (error) {
+                console.error('Error loading transactions:', error);
+                showError('Failed to load transactions: ' + (error instanceof Error ? error.message : String(error)));
+                document.getElementById('transactionsLoading').classList.remove('show');
+            }
+        }
+
+        async function exportTransactionsCSV() {
+            try {
+                console.log('Exporting transactions to CSV');
+                const response = await fetch(`${API_BASE}/export/csv`);
+                
+                if (!response.ok) {
+                    throw new Error(`API returned ${response.status}: ${response.statusText}`);
+                }
+                
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `transactions_${new Date().toISOString().split('T')[0]}.csv`;
+                a.click();
+                showSuccess('Transactions exported as CSV');
+            } catch (error) {
+                console.error('Error exporting CSV:', error);
+                showError('Failed to export CSV: ' + (error instanceof Error ? error.message : String(error)));
+            }
+        }
+
+        // TAX REPORTS
+        async function generateTaxReport(finalise) {
+            const startDate = document.getElementById('taxStartDate').value;
+            const endDate = document.getElementById('taxEndDate').value;
+            const method = document.getElementById('taxMethod').value;
+
+            if (!startDate || !endDate) {
+                showError('Please select start and end dates');
+                return;
+            }
+
+            document.getElementById('taxLoading').classList.add('show');
+            document.getElementById('taxReportContent').style.display = 'none';
+
+            try {
+                let url = `${API_BASE}/tax?start=${startDate}&end=${endDate}`;
+                if (method) url += `&method=${method}`;
+                if (finalise) url += `&finalise=true`;
+
+                console.log('Fetching tax report:', url);
+                const response = await fetch(url);
+                
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ error: response.statusText }));
+                    throw new Error(`API returned ${response.status}: ${errorData.error || response.statusText}`);
+                }
+                
+                const report = await response.json();
+                console.log('Tax report:', report);
+
+                displayTaxReport(report);
+                showSuccess(finalise ? 'Tax report finalized' : 'Tax report generated');
+                loadTaxHistory();
+            } catch (error) {
+                console.error('Error generating tax report:', error);
+                showError('Failed to generate tax report: ' + (error instanceof Error ? error.message : String(error)));
+            } finally {
+                document.getElementById('taxLoading').classList.remove('show');
+            }
+        }
+
+        function displayTaxReport(report) {
+            console.log('Displaying tax report:', report);
+            console.log('Report fields:', Object.keys(report));
+            
+            document.getElementById('reportPeriod').textContent = 
+                `${formatDate(report.startDate)} - ${formatDate(report.endDate)}`;
+            document.getElementById('reportProfit').textContent = 
+                formatCurrency(report.profit || 0);
+            document.getElementById('reportMethod').textContent = report.accountingMethod || 'N/A';
+            document.getElementById('reportStatus').textContent = report.isFinalised ? 'Finalized' : 'Draft';
+
+            const tbody = document.getElementById('sellEventsTable');
+            tbody.innerHTML = '';
+
+            if (report.sellEvents && report.sellEvents.length > 0) {
+                console.log('Sell events:', report.sellEvents);
+                console.log('First sell event fields:', Object.keys(report.sellEvents[0]));
+                report.sellEvents.forEach(event => {
+                    const row = document.createElement('tr');
+                    // API returns: sellTransactionId, sellDate, asset, totalQuantity, totalCostBasis, proceeds, profitLoss
+                    row.innerHTML = `
+                        <td>${formatDate(event.sellDate || event.dateTime || '')}</td>
+                        <td>${event.asset || 'Unknown'}</td>
+                        <td>${parseFloat(event.totalQuantity || 0).toFixed(8)}</td>
+                        <td>${formatCurrency(event.totalCostBasis || 0)}</td>
+                        <td>${formatCurrency(event.proceeds || 0)}</td>
+                        <td><span class="badge ${(event.profitLoss || 0) >= 0 ? 'bg-success' : 'bg-danger'}">${formatCurrency(event.profitLoss || 0)}</span></td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            } else {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No sell events</td></tr>';
+            }
+
+            document.getElementById('taxReportContent').style.display = 'block';
+        }
+
+        async function loadTaxHistory() {
+            document.getElementById('taxHistoryLoading').classList.add('show');
+            document.getElementById('taxHistoryContent').style.display = 'none';
+
+            try {
+                console.log('Fetching tax history');
+                const response = await fetch(`${API_BASE}/tax/history`);
+                
+                if (!response.ok) {
+                    throw new Error(`API returned ${response.status}: ${response.statusText}`);
+                }
+                
+                const history = await response.json();
+                console.log('Tax history:', history);
+
+                const tbody = document.getElementById('taxHistoryTable');
+                tbody.innerHTML = '';
+
+                if (Array.isArray(history) && history.length > 0) {
+                    history.forEach(entry => {
+                        const row = document.createElement('tr');
+                        const startYear = new Date(entry.startDate).getFullYear();
+                        row.innerHTML = `
+                            <td>${formatDate(entry.startDate)} - ${formatDate(entry.endDate)}</td>
+                            <td><strong>${formatCurrency(entry.profit || 0)}</strong></td>
+                            <td><span class="badge bg-secondary">${entry.accountingMethod}</span></td>
+                            <td>${formatDate(entry.finalisedAt)}</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-danger" onclick="resetTaxYear(${startYear})" title="Delete and regenerate">
+                                    <i class="bi bi-arrow-counterclockwise"></i> Reset
+                                </button>
+                            </td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No finalized reports yet</td></tr>';
+                }
+
+                document.getElementById('taxHistoryLoading').classList.remove('show');
+                document.getElementById('taxHistoryContent').style.display = 'block';
+            } catch (error) {
+                console.error('Error loading tax history:', error);
+                showError('Failed to load tax history: ' + (error instanceof Error ? error.message : String(error)));
+                document.getElementById('taxHistoryLoading').classList.remove('show');
+            }
+        }
+
+        // PORTFOLIO
+        async function loadPortfolio() {
+            const date = document.getElementById('portfolioDate').value;
+            
+            document.getElementById('portfolioLoading').classList.add('show');
+            document.getElementById('portfolioContent').style.display = 'none';
+
+            try {
+                let url = `${API_BASE}/portfolio`;
+                if (date) url += `?date=${date}`;
+
+                console.log('Fetching portfolio:', url);
+                const response = await fetch(url);
+                
+                if (!response.ok) {
+                    throw new Error(`API returned ${response.status}: ${response.statusText}`);
+                }
+                
+                const portfolio = await response.json();
+                console.log('Portfolio:', portfolio);
+
+                let totalValue = 0;
+                let positions = [];
+
+                if (portfolio.positions && Array.isArray(portfolio.positions)) {
+                    positions = portfolio.positions.map(pos => {
+                        const holdings = pos.holdings || {};
+                        const marketValue = (holdings.quantity || 0) * (holdings.currentPrice || holdings.averageCostBasis || 0);
+                        return {
+                            asset: pos.asset,
+                            quantity: holdings.quantity || 0,
+                            costPerUnit: holdings.averageCostBasis || 0,
+                            totalCostBasis: holdings.totalCostBasis || 0,
+                            marketValue: marketValue,
+                            currentPrice: holdings.currentPrice || holdings.averageCostBasis || 0
+                        };
+                    });
+                    totalValue = portfolio.summary?.totalValue || positions.reduce((sum, pos) => sum + (pos.marketValue || 0), 0);
+                }
+
+                document.getElementById('portfolioValue').textContent = formatCurrency(totalValue);
+                document.getElementById('portfolioCount').textContent = positions.length;
+
+                if (positions.length > 0) {
+                    const largest = positions.reduce((max, pos) => 
+                        (pos.marketValue > max.marketValue) ? pos : max
+                    );
+                    document.getElementById('portfolioLargest').textContent = 
+                        `${largest.asset} (${formatCurrency(largest.marketValue)})`;
+                }
+
+                const tbody = document.getElementById('portfolioTable');
+                tbody.innerHTML = '';
+
+                positions.forEach(position => {
+                    const percentage = totalValue > 0 ? ((position.marketValue || 0) / totalValue * 100).toFixed(2) : 0;
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td><strong>${position.asset || 'Unknown'}</strong></td>
+                        <td>${parseFloat(position.quantity || 0).toFixed(8)}</td>
+                        <td>${formatCurrency(position.costPerUnit || 0)}</td>
+                        <td><strong>${formatCurrency(position.marketValue || 0)}</strong></td>
+                        <td><span class="badge bg-info">${percentage}%</span></td>
+                    `;
+                    tbody.appendChild(row);
+                });
+
+                document.getElementById('portfolioLoading').classList.remove('show');
+                document.getElementById('portfolioContent').style.display = 'block';
+            } catch (error) {
+                console.error('Error loading portfolio:', error);
+                showError('Failed to load portfolio: ' + (error instanceof Error ? error.message : String(error)));
+                document.getElementById('portfolioLoading').classList.remove('show');
+            }
+        }
+
+        // Event listeners for real-time filtering
+        document.getElementById('filterType').addEventListener('change', loadTransactions);
+        document.getElementById('filterAsset').addEventListener('keyup', loadTransactions);
+    </script>
+</body>
+</html>

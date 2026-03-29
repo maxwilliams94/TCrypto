@@ -15,6 +15,7 @@ import { taxRouter } from './routes/tax';
 import { portfolioRouter } from './routes/portfolio';
 import { currencyRatesRouter } from './routes/currencyRates';
 import exportRouter from './routes/export';
+import path from 'path';
 
 export const app: Application = express();
 
@@ -27,6 +28,7 @@ const TAX_HISTORY_FILE_PATH: string = process.env.TAX_HISTORY_FILE_PATH || './da
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, '../public')));
 
 const transactionRepository: TransactionStorage = USE_FILE_STORAGE 
     ? createFileRepository(DATA_FILE_PATH)

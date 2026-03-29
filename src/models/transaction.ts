@@ -299,6 +299,7 @@ export class Transaction {
         costBasis: number,
         buyFee: number,
         sellDate: Date,
+        reportTaxYear: number,
         strategy: string
     ): void {
         if (!this.lotAllocations) {
@@ -313,7 +314,7 @@ export class Transaction {
             costBasis,
             buyFee,
             sellDate,
-            taxYear: sellDate.getFullYear(),
+            taxYear: reportTaxYear,
             strategy
         });
 
