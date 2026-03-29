@@ -3,9 +3,28 @@ import { generateTaxReport } from '../services/profitReporter';
 import { transactionRepository, currencyRateRepository, taxHistoryService } from '../index';
 import { resolveAccountingMethodForPeriod } from '../services/finalisedTaxYear';
 import { cleanupLotAllocationsForYear, inspectLotAllocations } from '../services/lotAllocationMaintenance';
+import { exportTaxReportComplete } from '../services/csvExporter';
 import logger from '../logger';
+import path from 'path';
 
 export const taxRouter = express.Router();
+
+function getTaxReportExportDirectory(startDate: Date, endDate: Date, finalised: boolean): string {
+    const period = `${startDate.toISOString().split('T')[0]}_to_${endDate.toISOString().split('T')[0]}`;
+    const stateDir = finalised ? 'finalised' : 'drafts';
+    return path.resolve(process.cwd(), 'exports', 'tax-reports', stateDir, period);
+}
+
+function buildTaxResponse(report: any, outputDir: string, exportState: 'draft' | 'finalised') {
+    const reportJson = typeof report.toJSON === 'function' ? report.toJSON() : report;
+    return {
+        ...reportJson,
+        export: {
+            outputDir,
+            exportState,
+        },
+    };
+}
 
 taxRouter.get('/history', async (_req: Request, res: Response) => {
     try {
@@ -74,6 +93,7 @@ taxRouter.get('/', async (req: Request, res: Response) => {
         let startDate: Date = start !== undefined ? new Date(start as string) : new Date(0);
         let endDate: Date = end !== undefined ? new Date(end as string) : new Date();
         const shouldFinalise = finalise === 'true';
+        const transactions = await transactionRepository.getAll();
 
         const storedReport = await taxHistoryService.getStoredReport(
             startDate,
@@ -82,11 +102,24 @@ taxRouter.get('/', async (req: Request, res: Response) => {
             'NOK'
         );
         if (storedReport) {
-            res.send(storedReport);
+            const exportOutputDir = getTaxReportExportDirectory(
+                startDate,
+                endDate,
+                storedReport.isFinalised === true
+            );
+            await exportTaxReportComplete(
+                storedReport,
+                exportOutputDir,
+                storedReport.accountingTransactions ?? transactions
+            );
+            res.send(buildTaxResponse(
+                storedReport,
+                exportOutputDir,
+                storedReport.isFinalised ? 'finalised' : 'draft'
+            ));
             return;
         }
 
-        const transactions = await transactionRepository.getAll();
         const { accountingMethod } = resolveAccountingMethodForPeriod({
             transactions,
             startDate,
@@ -101,6 +134,17 @@ taxRouter.get('/', async (req: Request, res: Response) => {
             currencyRateRepository
         );
 
+        // Always generate tax document exports when a report is generated.
+        const exportOutputDir = getTaxReportExportDirectory(startDate, endDate, shouldFinalise);
+        await exportTaxReportComplete(
+            report,
+            exportOutputDir,
+            report.accountingTransactions ?? transactions
+        );
+        logger.info(
+            `Tax report documents exported for ${start} to ${end} to ${exportOutputDir}`
+        );
+
         // If finalised, persist lot consumption to storage and store the final report snapshot
         if (shouldFinalise) {
             if (transactionRepository.flush) {
@@ -110,7 +154,11 @@ taxRouter.get('/', async (req: Request, res: Response) => {
             logger.info(`Tax report finalised for ${start} to ${end} using ${accountingMethod} — lot assignments persisted`);
         }
 
-        res.send(report);
+        res.send(buildTaxResponse(
+            report,
+            exportOutputDir,
+            shouldFinalise ? 'finalised' : 'draft'
+        ));
     } catch (error: any) {
         res.status(500).send({ error: error.message });
     }

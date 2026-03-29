@@ -424,6 +424,12 @@
                             </div>
 
                             <div class="row mt-4">
+                                <div class="col-12 mb-3">
+                                    <div class="alert alert-info py-2" id="reportExportPath" style="display: none;"></div>
+                                </div>
+                            </div>
+
+                            <div class="row mt-2">
                                 <div class="col-12">
                                     <h5>Sell Events</h5>
                                     <div class="table-responsive">
@@ -822,7 +828,15 @@
                 console.log('Tax report:', report);
 
                 displayTaxReport(report);
-                showSuccess(finalise ? 'Tax report finalized' : 'Tax report generated');
+                const exportPath = report.export?.outputDir;
+                const exportState = report.export?.exportState || (finalise ? 'finalised' : 'draft');
+                if (exportPath) {
+                    showSuccess(
+                        `${finalise ? 'Tax report finalized' : 'Tax report generated'} (${exportState}). Documents exported to: ${exportPath}`
+                    );
+                } else {
+                    showSuccess(finalise ? 'Tax report finalized' : 'Tax report generated');
+                }
                 loadTaxHistory();
             } catch (error) {
                 console.error('Error generating tax report:', error);
@@ -842,6 +856,16 @@
                 formatCurrency(report.profit || 0);
             document.getElementById('reportMethod').textContent = report.accountingMethod || 'N/A';
             document.getElementById('reportStatus').textContent = report.isFinalised ? 'Finalized' : 'Draft';
+
+            const exportPathElement = document.getElementById('reportExportPath');
+            if (report.export && report.export.outputDir) {
+                const state = report.export.exportState || (report.isFinalised ? 'finalised' : 'draft');
+                exportPathElement.textContent = `Documents (${state}) exported to: ${report.export.outputDir}`;
+                exportPathElement.style.display = 'block';
+            } else {
+                exportPathElement.style.display = 'none';
+                exportPathElement.textContent = '';
+            }
 
             const tbody = document.getElementById('sellEventsTable');
             tbody.innerHTML = '';

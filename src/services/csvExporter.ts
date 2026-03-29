@@ -19,6 +19,14 @@ function escapeCsvField(value: any): string {
     return str;
 }
 
+function formatFixed(value: unknown, digits: number, fallback = '0'): string {
+    const num = Number(value);
+    if (!Number.isFinite(num)) {
+        return fallback;
+    }
+    return num.toFixed(digits);
+}
+
 /**
  * Convert array of rows to CSV string
  */
@@ -147,8 +155,8 @@ export async function exportSellEventAllocationsToCSV(
                 buyTx?.dateTime.toISOString().split('T')[0] || 'Unknown',
                 allocation.buyTransactionId,
                 buyTx?.exchange || 'Unknown',
-                buyTx?.baseSize.toFixed(8) || 'Unknown',
-                buyTx?.getTaxPrice().toFixed(2) || 'Unknown',
+                formatFixed(buyTx?.baseSize, 8, 'Unknown'),
+                formatFixed(buyTx?.getTaxPrice(), 2, 'Unknown'),
                 allocation.quantity.toFixed(8),
                 allocation.costBasis.toFixed(2),
                 buyFee.toFixed(2),
@@ -289,11 +297,11 @@ export async function exportTransactionListToCSV(
             tx.side,
             `${tx.baseCurrency}-${tx.quoteCurrency}`,
             tx.exchange,
-            tx.baseSize.toFixed(8),
+            formatFixed(tx.baseSize, 8),
             tx.baseCurrency,
-            tx.quoteSize.toFixed(8),
+            formatFixed(tx.quoteSize, 8),
             tx.quoteCurrency,
-            tx.price.toFixed(8),
+            formatFixed(tx.price, 8),
             (tx.fee ?? 0).toFixed(8),
             tx.feeCurrency || '',
             (tx.taxPrice ?? 'N/A').toString(),

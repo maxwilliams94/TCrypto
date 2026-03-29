@@ -17,6 +17,12 @@ import path from 'path';
 
 const exportRouter = express.Router();
 
+function getTaxReportExportDirectory(startDate: Date, endDate: Date, finalised: boolean): string {
+    const period = `${startDate.toISOString().split('T')[0]}_to_${endDate.toISOString().split('T')[0]}`;
+    const stateDir = finalised ? 'finalised' : 'drafts';
+    return path.resolve(process.cwd(), 'exports', 'tax-reports', stateDir, period);
+}
+
 async function updatePortfolioMarketValues(
     portfolio: Portfolio,
     nativeCurrency: string,
@@ -163,8 +169,8 @@ exportRouter.get('/tax-report/complete', async (req, res): Promise<void> => {
             );
         }
 
-        // Export to directory
-        const outputDir = path.resolve(process.cwd(), 'exports/tax-reports');
+        // Export to directory grouped by draft/finalised state and period.
+        const outputDir = getTaxReportExportDirectory(startDate, endDate, shouldFinalise);
         await exportTaxReportComplete(
             taxReport,
             outputDir,
@@ -174,6 +180,7 @@ exportRouter.get('/tax-report/complete', async (req, res): Promise<void> => {
         res.json({
             success: true,
             message: `Tax report exported to ${outputDir}`,
+            exportState: shouldFinalise ? 'finalised' : 'draft',
             files: [
                 `tax_report_summary_${start}_to_${end}.csv`,
                 `sell_events_${start}_to_${end}.csv`,
