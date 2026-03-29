@@ -321,6 +321,7 @@
                                     <th>Date</th>
                                     <th>Type</th>
                                     <th>Market</th>
+                                    <th>Exchange</th>
                                     <th>Quantity</th>
                                     <th>Quote Value (NOK)</th>
                                     <th>Price (NOK)</th>
@@ -752,16 +753,22 @@
                 data.transactions.forEach(tx => {
                     const row = document.createElement('tr');
                     row.className = 'transaction-row';
-                    const [base, quote] = tx.CCY ? tx.CCY.split('-') : ['', ''];
                     const quoteSize = tx.taxQuoteSize || (tx.baseSize * tx.price) || 0;
+                    const side = (tx.side || 'unknown').toUpperCase();
+                    const sideBadgeClass = side === 'BUY'
+                        ? 'bg-success'
+                        : side === 'SELL'
+                            ? 'bg-danger'
+                            : 'bg-secondary';
                     row.innerHTML = `
                         <td>${formatDate(tx.dateTime)}</td>
                         <td><span class="badge bg-info">${tx.type}</span></td>
                         <td>${tx.CCY}</td>
+                        <td>${tx.exchange || '-'}</td>
                         <td>${parseFloat(tx.baseSize || 0).toFixed(8)}</td>
                         <td>${formatCurrency(quoteSize)}</td>
                         <td>${formatCurrency(tx.price || 0)}</td>
-                        <td><span class="badge bg-success">${tx.side || 'unknown'}</span></td>
+                        <td><span class="badge ${sideBadgeClass}">${side}</span></td>
                     `;
                     tbody.appendChild(row);
                 });
