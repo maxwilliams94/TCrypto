@@ -238,7 +238,7 @@ export async function exportTaxReportSummaryToCSV(
         ['Total Sells', (taxReport.sells || 0).toString()],
         ['Number of Sell Events', (taxReport.sellEvents?.length || 0).toString()],
         ['Total Realized Gain/Loss', (taxReport.profit || 0).toFixed(2)],
-        ['Total Fees', (taxReport.fees || 0).toFixed(2)],
+        ['Total Fees (Buy+Sell+Withdrawal)', (taxReport.fees || 0).toFixed(2)],
         ['Total Buy Fees', (taxReport.totalBuyFeesIncluded || 0).toFixed(2)],
         ['Total Sell Fees', (taxReport.totalSellFees || 0).toFixed(2)],
         ['Deductible Withdrawal Fees', (taxReport.deductibleFees || 0).toFixed(2)],
@@ -246,7 +246,7 @@ export async function exportTaxReportSummaryToCSV(
         ['Assets Traded', Array.from(taxReport.assets || []).join(', ')],
         ['Exchanges Used', Array.from(taxReport.exchanges || []).join(', ')],
         ['Portfolio Total Realized Gain/Loss', (taxReport.portfolio?.getTotalRealizedGainLoss() || 0).toFixed(2)],
-        ['Portfolio Total Unrealized Gain/Loss', (taxReport.portfolio?.getTotalUnrealizedGainLoss() || 0).toFixed(2)]
+        ['Portfolio Value (as of Tax Period End)', (taxReport.portfolio?.getTotalValue() || 0).toFixed(2)]
     ];
 
     const csv = arrayToCSV(headers, rows);

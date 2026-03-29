@@ -131,6 +131,8 @@ export async function generateTaxReport(
 
             if (t.fee > 0) {
                 taxReport.deductibleFees = (taxReport.deductibleFees || 0) + feeInTaxCurrency;
+                // Include withdrawal fees in the aggregate total fees metric.
+                taxReport.fees = (taxReport.fees || 0) + feeInTaxCurrency;
 
                 logger.debug(
                     `Withdrawal fee: ${t.fee} ${t.feeCurrency || t.quoteCurrency} = ${feeInTaxCurrency} ${nativeCurrency} ` +

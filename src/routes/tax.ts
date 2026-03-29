@@ -4,6 +4,8 @@ import { transactionRepository, currencyRateRepository, taxHistoryService } from
 import { resolveAccountingMethodForPeriod } from '../services/finalisedTaxYear';
 import { cleanupLotAllocationsForYear, inspectLotAllocations } from '../services/lotAllocationMaintenance';
 import { exportTaxReportComplete } from '../services/csvExporter';
+import { Portfolio } from '../models/portfolio';
+import { ExchangeRateService } from '../services/exchangeRateService';
 import logger from '../logger';
 import path from 'path';
 
@@ -24,6 +26,27 @@ function buildTaxResponse(report: any, outputDir: string, exportState: 'draft' |
             exportState,
         },
     };
+}
+
+async function updatePortfolioMarketValues(
+    portfolio: Portfolio,
+    nativeCurrency: string,
+    asOfDate: Date
+): Promise<void> {
+    const exchangeRateService = new ExchangeRateService(currencyRateRepository);
+
+    for (const position of portfolio.getAllPositions(false)) {
+        try {
+            const currentPrice = await exchangeRateService.getCryptoPriceInCurrency(
+                position.asset,
+                nativeCurrency,
+                asOfDate
+            );
+            position.updateMarketValue(currentPrice);
+        } catch (error: any) {
+            logger.warn(`Failed to fetch price for ${position.asset}: ${error?.message || error}`);
+        }
+    }
 }
 
 taxRouter.get('/history', async (_req: Request, res: Response) => {
@@ -102,6 +125,10 @@ taxRouter.get('/', async (req: Request, res: Response) => {
             'NOK'
         );
         if (storedReport) {
+            if (storedReport.portfolio) {
+                await updatePortfolioMarketValues(storedReport.portfolio, 'NOK', endDate);
+            }
+
             const exportOutputDir = getTaxReportExportDirectory(
                 startDate,
                 endDate,
@@ -133,6 +160,10 @@ taxRouter.get('/', async (req: Request, res: Response) => {
             { accountingMethod, finalise: shouldFinalise },
             currencyRateRepository
         );
+
+        if (report.portfolio) {
+            await updatePortfolioMarketValues(report.portfolio, 'NOK', endDate);
+        }
 
         // Always generate tax document exports when a report is generated.
         const exportOutputDir = getTaxReportExportDirectory(startDate, endDate, shouldFinalise);

@@ -74,7 +74,7 @@ export class TaxReport {
         this.totalBuyFeesIncluded = (this.totalBuyFeesIncluded || 0) + sellEvent.totalBuyFees;
         this.totalSellFees = (this.totalSellFees || 0) + sellEvent.sellFee;
         this.profit = (this.profit || 0) + sellEvent.profitLoss;
-        // Total fees includes both buy and sell fees
+        // Total fees includes buy/sell fees (withdrawal fees are added during report generation)
         this.fees = (this.fees || 0) + sellEvent.getTotalFees();
     }
 
@@ -125,7 +125,8 @@ export class TaxReport {
                 numberOfSells: this.sellEvents?.length || 0,
                 isFinalised: this.isFinalised,
                 realizedGainLoss: this.portfolio?.getTotalRealizedGainLoss(),
-                unrealizedGainLoss: this.portfolio?.getTotalUnrealizedGainLoss()
+                portfolioValueAsOfReportEnd: this.portfolio?.getTotalValue(),
+                valuationDate: this.endDate.toISOString().split('T')[0]
             }
         };
     }
